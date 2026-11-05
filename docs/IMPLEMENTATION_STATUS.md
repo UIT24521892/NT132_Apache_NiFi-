@@ -1,6 +1,6 @@
 # Trạng thái triển khai và kiểm chứng
 
-Cập nhật: 19/10/2026 (Asia/Ho_Chi_Minh).
+Cập nhật: 28/10/2026 (Asia/Ho_Chi_Minh).
 
 **Kết luận hiện tại: đã rà soát tài liệu; chưa triển khai hoặc kiểm chứng runtime.** Điểm xuất phát là file `NiFi_Project_Plan_Full.md`. Chưa có inventory SSH, chưa provision VM/dịch vụ và chưa chạy integration tests. Việc tạo thêm tài liệu trong đợt rà soát không thay đổi trạng thái runtime.
 
@@ -27,7 +27,7 @@ Không suy ra PASS của gate sau từ PASS của gate trước. Không coi cấ
 | Gate | Phạm vi và điều kiện kết thúc | Trạng thái hiện tại | Evidence hiện có / còn thiếu |
 |---|---|---|---|
 | G0 | Rà soát plan theo phạm vi Get/Transform và định hướng quản trị mạng; nhận diện giả định, mâu thuẫn và phần thiếu. | DONE_DOCUMENT_REVIEW | Đã đọc và rà soát plan. Phản hồi giảng viên/rubric và phê duyệt phạm vi chưa có; không coi là đã xác nhận. |
-| G1 | Chốt inventory, topology, host/IP/NIC, tài nguyên, endpoint SSH, quyền quản trị; khóa phiên bản và nguồn cài phù hợp; preflight môi trường đích. | PENDING_ENVIRONMENT | Chưa có inventory SSH, version lock hoặc kết quả preflight VM. Chưa chạy bất kỳ provisioning nào. |
+| G1 | Chốt inventory, topology, host/IP/NIC, tài nguyên, endpoint SSH, quyền quản trị; khóa phiên bản và nguồn cài phù hợp; preflight môi trường đích. | PENDING_ENVIRONMENT | Đã chọn topology 4 VM trên 3 máy vật lý, có thiết kế [DEPLOYMENT_ARCHITECTURE.md](DEPLOYMENT_ARCHITECTURE.md) và số liệu HOST-MAC (28/10/2026). Chưa có cấu hình 2 máy Windows, thiết bị mạng, inventory SSH, version lock hoặc preflight VM. Chưa chạy provisioning. |
 | G2 | NiFi và ba dịch vụ nguồn chạy bằng user/quyền phù hợp trên Linux; IP/SSH, bind address và firewall cho kết nối NiFi; API có WSGI/service; startup và health checks. | NOT_RUN | Chưa provision Linux, NiFi, MySQL, FTP hay API. Chưa có log service/network/firewall hoặc kiểm thử allow/deny cho các đường kết nối của NiFi. |
 | G3 | Ba flow NiFi JDBC, REST và FTP hoạt động với fixtures; controller services/record readers-writers cần thiết hợp lệ; chứng minh authentication, grants, passive transfer và lỗi kết nối theo specs. | NOT_RUN | Chưa có flow/controller services được xác minh hoặc input/output runtime của ba nguồn. |
 | G4 | Transform/output của ba flow đúng data contract; relationships và queue lỗi được xử lý, retry có giới hạn/đường xử lý, kiểm đếm kết quả và kiểm thử idempotency/restart đúng phạm vi. Enrichment không mặc định bắt buộc. | NOT_RUN | Chưa có flow được kiểm chứng, output, quarantine/rejected hoặc evidence chạy lại/restart. Không tuyên bố “không mất dữ liệu”. |
@@ -63,7 +63,7 @@ Remaining action / limitation:
 
 | Mục | Trạng thái | Việc tiếp theo |
 |---|---|---|
-| VM, NIC, CPU/RAM/disk và topology thực tế | PENDING_ENVIRONMENT | Thu thập thông tin và chọn phương án 4 VM hoặc gộp theo [MA-01](MANUAL_ACTIONS.md#ma-01--máy-ảo-và-card-mạng). |
+| VM, NIC, CPU/RAM/disk và topology thực tế | PENDING_ENVIRONMENT | Topology đã chọn: 4 VM trên HOST-MAC + 2 máy Windows, LAN riêng, NIC bridged. Thu thập cấu hình 2 máy Windows và thiết bị mạng theo [MA-01](MANUAL_ACTIONS.md#ma-01--máy-ảo-và-card-mạng). |
 | IP/hostname, SSH, host key và sudo | PENDING_ENVIRONMENT | Hoàn thiện inventory, chạy preflight theo [MA-02](MANUAL_ACTIONS.md#ma-02--ip-ssh-và-quyền-quản-trị-linux). |
 | Nơi nạp secrets và identities lab | PENDING_ENVIRONMENT | Chuẩn bị cấu hình placeholder, cơ chế sinh/nạp secrets và quyền theo [MA-03](MANUAL_ACTIONS.md#ma-03--credentials-và-danh-tính-nội-bộ). |
 | Trust CA/client certificate browser | NOT_RUN | Thực hiện sau khi endpoint TLS và phương án identity có thật; xem [MA-04](MANUAL_ACTIONS.md#ma-04--trust-ca-và-chứng-chỉ-client-trên-trình-duyệt). |

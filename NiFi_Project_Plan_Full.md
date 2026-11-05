@@ -209,6 +209,7 @@ Dòng lỗi (file hỏng, dòng dữ liệu sai) được tách sang thư mục 
 | FTP Server | VM3 | Ubuntu + vsftpd | 21 + dải passive | Nhận file chấm công |
 | API Server | VM4 | Ubuntu + Flask/Gunicorn + systemd | 5000 | Cung cấp nguồn ca làm giả |
 
+- Nhóm chạy 4 VM trên 3 máy vật lý (Mac — Trường: NiFi; Windows A — Trung: DB + API, hai VM riêng; Windows B — Phước: FTP), VM bridged vào LAN riêng của nhóm là hotspot điện thoại; chi tiết ở [docs/DEPLOYMENT_ARCHITECTURE.md](docs/DEPLOYMENT_ARCHITECTURE.md).
 - Các VM đặt chung một mạng (ví dụ `192.168.56.0/24`, IP `.10` đến `.13` — địa chỉ ví dụ, thay bằng IP thật khi dựng).
 - Laptop nhóm: trình duyệt vào NiFi qua HTTPS `:8443`, và chạy script giả lập máy chấm công.
 - **Nếu máy yếu:** gộp VM2 + VM3 + VM4 thành một VM, NiFi để riêng (tổng 2 VM).
@@ -363,14 +364,161 @@ Dùng `/nifi-api` để theo dõi và điều khiển NiFi bằng script, xác m
 
 **Thứ tự ưu tiên:** NiFi chạy và kết nối được → ba use-case Get/Transform + PutFile → vận hành/bảo mật/khôi phục NiFi có evidence → mở rộng ghép dữ liệu/DB đích/Use-case 6. Không ưu tiên tính công hơn nội dung Apache NiFi của môn.
 
-## Phân công (điền tên)
+## Phân công
 
-| Thành viên | Vai trò | Phụ trách chính |
+Nhóm 3 người, mỗi người phụ trách máy của mình (chốt 05/11/2026):
+
+| Thành viên | Máy | Phụ trách chính |
 |---|---|---|
-| [Họ tên 1] | Trưởng nhóm, NiFi admin | Cài NiFi, flow baseline, Controller Services, bảo mật, phân quyền |
-| [Họ tên 2] | Database | MySQL, dữ liệu giả, Use-case 1 (JDBC) |
-| [Họ tên 3] | API | API Flask ca làm việc, Use-case 2 (REST) |
-| [Họ tên 4] | FTP + Báo cáo | FTP, script giả lập chấm công, Use-case 3, tổng hợp báo cáo |
+| Trường | Mac — VM1 | NiFi: cài đặt, flow chung, bảo mật, phân quyền, vận hành; ghép báo cáo |
+| Trung | Windows A — VM2, VM4 | MySQL, dữ liệu giả, API Flask; Use-case 1 (JDBC) và 2 (REST) |
+| Phước | Windows B — VM3 | FTP, simulator chấm công; Use-case 3 (FTP) |
+
+### Việc theo giai đoạn
+
+**Bước 0 — cả nhóm, làm ngay**
+
+- Hỏi thầy các câu ở Phần J, nhất là việc chạy 4 VM trên 3 máy.
+- Chọn điện thoại làm hotspot, thử 3 laptop kết nối được với nhau.
+- Trung và Phước gửi cấu hình máy (RAM, CPU, disk) để biết có chạy nổi VM không.
+- Cả 3 clone repo GitHub chung để dùng chung script.
+
+**Giai đoạn 1 — dựng server**
+
+| Trường | Trung | Phước |
+|---|---|---|
+| VM1: cài NiFi 2.12.0 + JDK 21, mở được UI qua HTTPS | VM2: cài MySQL, tạo `hr_db` với 50 nhân viên giả, 5 phòng ban; user chỉ đọc cho NiFi. VM4: Flask API trả 3 ca làm việc, có API key | VM3: vsftpd, thư mục `/checkin`; script simulator upload CSV (file đúng, file lỗi, file trùng) |
+
+Mốc chung: từ NiFi kết nối được cả 3 nguồn (TC-03).
+
+**Giai đoạn 2 — làm flow NiFi**
+
+Mỗi người làm flow cho nguồn của mình, để ai cũng giải thích được NiFi:
+
+- Trường: khung flow chung, Parameter Context, phần ghi output và rejected, hướng dẫn hai bạn.
+- Trung: PG-JDBC — đọc nhân viên, lọc active, che tên và email; PG-REST — đọc ca làm, retry khi API lỗi.
+- Phước: PG-FTP — đọc CSV, tách dòng lỗi, chống trùng.
+
+**Giai đoạn 3 — test và vận hành**
+
+- Trường: phân quyền 3 vai trò, back pressure, Provenance/Replay, restart và backup/restore NiFi.
+- Trung: tắt DB, sai mật khẩu, sửa dữ liệu nguồn; API lỗi 500/chậm/sai key — rồi xem NiFi xử lý.
+- Phước: CSV lỗi, upload trùng, file đang upload dở, tắt FTP rồi bật lại.
+- Mỗi người chụp ảnh, lưu log làm evidence cho phần test của mình.
+
+**Giai đoạn 4 — báo cáo, slide, demo**
+
+- Mỗi người viết phần server và flow của mình.
+- Trường viết phần kiến trúc NiFi, bảo mật, vận hành và ghép bản cuối.
+- Cả nhóm diễn tập demo ít nhất một lần trước buổi thật.
+
+### Chi tiết từng người: dựng gì, làm gì, commit gì
+
+Các thư mục dưới đây là nơi sẽ commit; hiện chưa tạo. Test case theo [SPECS mục 8](SPECS.md#8-nghiệm-thu-và-evidence).
+
+#### Trường — NiFi (Mac, VM1)
+
+**Dựng**
+
+- VM1 Ubuntu Server 24.04 arm64 trên UTM.
+- JDK 21 + NiFi 2.12.0, chạy bằng systemd, tự khởi động khi bật VM.
+- NiFi HTTPS: CA của lab, certificate cho server, 3 client certificate admin / operator / manager.
+- MySQL Connector/J (ghi rõ version và checksum).
+- Thư mục output `/srv/nt132/output` và rejected `/srv/nt132/rejected`.
+
+**Làm**
+
+- Parameter Context và Controller Services dùng chung cho cả 3 flow.
+- PG-OUTPUT (tạo envelope, hash, PutFile) và PG-ERROR (ghi rejected, dead-letter).
+- Hướng dẫn và review PG-JDBC, PG-REST của Trung, PG-FTP của Phước.
+- Phân quyền 3 vai trò; back pressure trên các queue; Provenance và Replay.
+- Restart NiFi, backup và restore NiFi sang VM riêng.
+- Export flow sau mỗi thay đổi lớn.
+- Ghép báo cáo, slide, kịch bản demo.
+
+**Test phụ trách:** TC-01, TC-02, TC-19 đến TC-26, TC-28 đến TC-30.
+
+**Commit**
+
+- `nifi/`: flow export từ NiFi thật, danh sách processor/bundle, file parameter mẫu (không có giá trị sensitive).
+- `infra/nifi/`: script cài NiFi, systemd unit, script tạo certificate (không commit key/cert thật).
+- `scripts/`: backup/restore NiFi, script đối chiếu output.
+- `docs/`: báo cáo, slide, kịch bản demo.
+- `evidence/`: ảnh và log của các test mình phụ trách.
+
+#### Trung — MySQL + API (Windows A, VM2 và VM4)
+
+**Dựng**
+
+- VM2: Ubuntu Server 24.04 + MySQL 8.0, database `hr_db`.
+- VM4: Ubuntu Server 24.04 + Python 3.12, Flask chạy bằng Gunicorn + systemd.
+
+**Làm**
+
+- Tạo bảng `departments`, `employees` theo SPECS 5.2.
+- Script dữ liệu giả: 50 nhân viên, 5 phòng ban, 45 active, 5 resigned. Chạy lại không bị nhân đôi.
+- User MySQL chỉ SELECT cho NiFi.
+- API theo SPECS 5.3: `/health`, `/api/shifts`, `/api/shifts/{id}`, `/api/slow`, `/api/error`. Cần `X-API-Key`, sai key trả 401.
+- PG-JDBC trong NiFi: đọc nhân viên, lọc active, che tên và email.
+- PG-REST trong NiFi: đọc 3 ca làm, chuẩn hóa giờ, retry có giới hạn khi API lỗi.
+- Gây lỗi để test: tắt DB, sai mật khẩu, sửa dữ liệu nguồn; API trả 500, chậm 10 giây, sai key.
+
+**Test phụ trách:** TC-05 đến TC-13.
+
+**Commit**
+
+- `sql/`: schema, seed, lệnh cấp quyền (mật khẩu để placeholder), câu SELECT mà NiFi dùng.
+- `api/`: code Flask, file dependency đã khóa version, `.env.example`, systemd unit.
+- `tests/`: test hợp đồng API (đúng key, sai key, 404, 500).
+- `evidence/`: ảnh và log của các test mình phụ trách.
+
+#### Phước — FTP + simulator (Windows B, VM3)
+
+**Dựng**
+
+- VM3: Ubuntu Server 24.04 + vsftpd, thư mục `/checkin`, chế độ passive.
+- 2 tài khoản FTP: `clock_uploader` (được upload) và `nifi_fetch` (chỉ đọc).
+- Simulator chạy trên máy Windows của Phước.
+
+**Làm**
+
+- Script simulator: upload file `.tmp`, xong mới đổi tên thành `.csv`.
+- Bộ CSV mẫu theo SPECS 5.4:
+  - file chuẩn 10 dòng (7 đúng, 1 trùng, 2 lỗi);
+  - file hỏng định dạng;
+  - file chứa event trùng với file trước.
+- PG-FTP trong NiFi: list và fetch file, tách dòng lỗi, tạo `event_id`, chống trùng.
+- Gây lỗi để test: CSV lỗi, upload trùng, file đang upload dở, sai mật khẩu FTP, tắt FTP rồi bật lại.
+
+**Test phụ trách:** TC-14 đến TC-18.
+
+**Commit**
+
+- `simulator/`: script upload và thư mục `simulator/fixtures/` chứa các file CSV mẫu.
+- `infra/ftp/`: file `vsftpd.conf` mẫu, script tạo tài khoản (không ghi mật khẩu).
+- `tests/`: kiểm tra số dòng và kết quả mong đợi của từng file CSV mẫu.
+- `evidence/`: ảnh và log của các test mình phụ trách.
+
+#### Cả nhóm cùng làm
+
+- **TC-03:** từ NiFi kết nối được cả 3 nguồn.
+- **TC-04:** mỗi người thử firewall cho VM của mình, gồm cả máy được phép và máy bị chặn.
+- **TC-27:** mỗi người reboot VM của mình, dịch vụ phải tự chạy lại.
+- Mỗi người viết phần báo cáo về server và flow của mình.
+
+### Quy tắc commit chung
+
+- `git pull` trước khi bắt đầu làm; commit nhỏ và thường xuyên, không dồn đến cuối.
+- Mỗi người chủ yếu sửa trong thư mục của mình để tránh conflict.
+- **Không commit:**
+  - file máy ảo (`.utm`, `.vdi`, `.vmdk`, `.qcow2`);
+  - mật khẩu, API key, private key, keystore/truststore NiFi;
+  - dữ liệu NiFi đang chạy (repositories, state), file backup, thư mục output thật.
+  - Các loại file này đưa vào `.gitignore` chung.
+- Secrets chỉ commit file mẫu có placeholder (ví dụ `.env.example`); file thật để trong VM.
+- Flow NiFi phải export từ NiFi đang chạy rồi mới commit. Không viết tay file flow JSON.
+- Ảnh và log phải che mật khẩu, key trước khi commit vào `evidence/`.
+- Trước buổi demo, commit bản cuối và ghi rõ commit đó dùng để demo.
 
 ---
 

@@ -65,8 +65,9 @@ Browser admin/operator/manager --HTTPS + client identity--> NiFi UI
 | API | Python 3.12 + Flask + Gunicorn, chạy bằng systemd |
 | FTP | vsftpd từ repository Ubuntu |
 
-Profile chính gồm 4 VM (NiFi, DB, FTP, API); profile tiết kiệm gộp DB/FTP/API vào một VM. Địa chỉ IP
-trong tài liệu chỉ là ví dụ, sẽ thay bằng inventory thật khi dựng môi trường.
+Nhóm chọn profile 4 VM (NiFi, DB, FTP, API) chạy trên 3 máy vật lý (1 Mac, 2 Windows) nối bằng LAN
+riêng là hotspot điện thoại; xem [docs/DEPLOYMENT_ARCHITECTURE.md](docs/DEPLOYMENT_ARCHITECTURE.md). Profile dự phòng gộp
+DB/FTP/API vào một VM. Địa chỉ IP trong tài liệu chỉ là ví dụ, sẽ thay bằng inventory thật khi dựng môi trường.
 
 ## Tài liệu trong repo
 
@@ -75,6 +76,7 @@ trong tài liệu chỉ là ví dụ, sẽ thay bằng inventory thật khi dự
 | [SPECS.md](SPECS.md) | Đặc tả kỹ thuật: kiến trúc, hợp đồng dữ liệu, thiết kế flow/lỗi, bảo mật, khôi phục và bảng nghiệm thu TC-01..TC-30 |
 | [NiFi_Project_Plan_Full.md](NiFi_Project_Plan_Full.md) | Kế hoạch tổng thể: kiến thức nền, kiến trúc, thiết kế từng nguồn, lộ trình 6 tuần, câu hỏi cần xác nhận với giảng viên |
 | [REVIEW.md](REVIEW.md) | Rà soát kỹ thuật bản plan v3.0 và các phát hiện đã đưa vào SPECS |
+| [docs/DEPLOYMENT_ARCHITECTURE.md](docs/DEPLOYMENT_ARCHITECTURE.md) | Kiến trúc triển khai: 4 VM trên 3 máy vật lý, mạng, ma trận cổng/firewall, bảo mật, backup |
 | [docs/IMPLEMENTATION_STATUS.md](docs/IMPLEMENTATION_STATUS.md) | Trạng thái thật của từng gate và bộ test |
 | [docs/MANUAL_ACTIONS.md](docs/MANUAL_ACTIONS.md) | Các điều kiện môi trường và thao tác cần phối hợp (MA-01..MA-06) |
 | [agent.md](agent.md), [CLAUDE.md](CLAUDE.md) | Quy tắc làm việc cho Claude Code trong dự án |

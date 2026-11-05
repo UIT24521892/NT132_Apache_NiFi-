@@ -33,7 +33,7 @@ Mở rộng sau baseline: enriched attendance, ghi `report_db`, SFTP/FTPS, incre
 | Mục | Quyết định tạm dùng | Cần xác nhận |
 |---|---|---|
 | Phạm vi Get/Transform | PutFile chỉ để quan sát kết quả | Thầy chấp nhận đầu ra demo |
-| Số máy | 4 VM cho 4 dịch vụ | Có bắt buộc 4 máy độc lập không |
+| Số máy | 4 VM cho 4 dịch vụ, chạy trên 3 máy vật lý (1 Mac + 2 Windows); nhóm chốt 28/10/2026 | Thầy chấp nhận 4 VM trên 3 máy vật lý |
 | API | Flask nội bộ tối thiểu, dữ liệu tĩnh giả | Thầy có yêu cầu API công khai không |
 | FTP | FTP thường chỉ trong mạng lab cô lập | Có yêu cầu FTPS/SFTP không |
 | NiFi | Một node | Có yêu cầu cluster không |
@@ -82,30 +82,33 @@ phải chứa phiên bản thực, architecture, nguồn tải/checksum với bi
 [Nguồn phát hành NiFi](https://nifi.apache.org/download/),
 [yêu cầu hệ thống NiFi](https://nifi.apache.org/nifi-docs/administration-guide.html#system_requirements).
 
-Profile chính: 4 VM. Profile tiết kiệm: NiFi một VM, DB/FTP/API chung một VM; vẫn giữ user,
-port, data directory và service độc lập. Ghi rõ đây là hai máy có bốn dịch vụ; cần thầy chấp nhận.
+Profile chính (nhóm chọn): 4 VM trên 3 máy vật lý; vị trí VM, mạng và rủi ro ở
+[docs/DEPLOYMENT_ARCHITECTURE.md](docs/DEPLOYMENT_ARCHITECTURE.md). Profile dự phòng: NiFi một VM,
+DB/FTP/API chung một VM; vẫn giữ user, port, data directory và service độc lập. Ghi rõ đây là hai
+máy có bốn dịch vụ; cần thầy chấp nhận.
 Container chỉ hỗ trợ dev nếu có, không tự coi container là VM khi đề yêu cầu VM.
 
 ### 4.2. Inventory minh họa — phải thay bằng thông số thật
 
-| Máy | Hostname | IP lab ví dụ | Tài nguyên dự kiến |
-|---|---|---|---|
-| VM1 | nifi.lab | 192.168.56.10/24 | 2 vCPU, RAM 4 GiB, disk 30 GiB |
-| VM2 | db.lab | 192.168.56.11/24 | 1 vCPU, RAM 1–2 GiB, disk 15 GiB |
-| VM3 | ftp.lab | 192.168.56.12/24 | 1 vCPU, RAM 1 GiB, disk 15 GiB |
-| VM4 | api.lab | 192.168.56.13/24 | 1 vCPU, RAM 1 GiB, disk 15 GiB |
+| Máy | Hostname | Máy vật lý (đề xuất) | IP lab ví dụ | Tài nguyên dự kiến |
+|---|---|---|---|---|
+| VM1 | nifi.lab | HOST-MAC | 192.168.56.10/24 | 2 vCPU, RAM 4 GiB, disk 30 GiB |
+| VM2 | db.lab | HOST-WIN-A | 192.168.56.11/24 | 1 vCPU, RAM 1–2 GiB, disk 15 GiB |
+| VM3 | ftp.lab | HOST-WIN-B | 192.168.56.12/24 | 1 vCPU, RAM 1 GiB, disk 15 GiB |
+| VM4 | api.lab | HOST-WIN-A | 192.168.56.13/24 | 1 vCPU, RAM 1 GiB, disk 15 GiB |
 
 Tài nguyên trên là đề xuất cho dữ liệu nhỏ, phải đo thực tế. Ghi IP máy quản trị và máy
 upload riêng, tên NIC, subnet, route/default gateway và DNS/hosts. Kiểm tra subnet không trùng
 mạng/VPN có sẵn; không mặc định hypervisor nào cũng có mạng `192.168.56.0/24`.
-NIC lab host-only/internal có đường truy cập quản trị; NIC NAT chỉ dùng tải gói nếu cần.
-Không cần bridge/public port forwarding. Đồng bộ giờ VM; nghiệp vụ dùng `Asia/Ho_Chi_Minh`.
+VM nằm trên ba máy vật lý nên NIC lab là bridged vào LAN riêng của nhóm (hotspot điện thoại của nhóm,
+không thuộc mạng trường), IP tĩnh; không port forwarding qua host, không mở ra Internet.
+Đồng bộ giờ VM; nghiệp vụ dùng `Asia/Ho_Chi_Minh`.
 
 ### 4.3. Ma trận kết nối
 
 | Nguồn được phép | Đích | TCP | Mục đích |
 |---|---|---|---|
-| Máy quản trị đã chỉ định | Từng VM | 22 | SSH quản trị |
+| Máy của các thành viên đã chỉ định | Từng VM | 22 | SSH quản trị/kiểm tra, user riêng, key-only |
 | Máy trình duyệt demo đã chỉ định | VM1 | 8443 | NiFi UI/API qua HTTPS |
 | VM1 | VM2 | 3306 | NiFi JDBC |
 | VM1 | VM4 | 5000 | NiFi lấy REST |

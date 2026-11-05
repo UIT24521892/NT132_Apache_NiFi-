@@ -1,6 +1,6 @@
 # Các điều kiện môi trường và thao tác cần phối hợp
 
-Cập nhật: 19/10/2026 (Asia/Ho_Chi_Minh).
+Cập nhật: 28/10/2026 (Asia/Ho_Chi_Minh).
 
 Tại thời điểm bắt đầu rà soát, dự án chỉ có kế hoạch, chưa có runtime được kiểm chứng, inventory SSH hoặc lần provision nào. Những mục dưới đây là **PENDING_ENVIRONMENT** hoặc **NOT_RUN**, chưa phải lỗi triển khai đã quan sát được. Chưa có căn cứ để báo lỗi sudo, hypervisor, firewall hay API.
 
@@ -12,17 +12,29 @@ Các artifact triển khai mang nhãn **PLANNED: chưa tạo hoặc chưa triể
 
 ## MA-01 — Máy ảo và card mạng
 
-- **Trạng thái:** PENDING_ENVIRONMENT; liên quan G1–G2.
-- **Prerequisite:** biết hypervisor hoặc nền tảng VM, kiến trúc CPU, RAM/disk khả dụng; được cấp quyền tạo máy và chọn 4 VM hay phương án gộp. Không tự coi số VM là yêu cầu đã được thầy chốt.
-- **Artifact Claude cần chuẩn bị — PLANNED:** inventory mẫu, sơ đồ NIC/subnet/IP, phân bổ tài nguyên, cấu hình/script provision phù hợp nền tảng và hướng dẫn khởi tạo thủ công tương ứng.
-- **Thao tác người dùng tối thiểu:** cung cấp nền tảng và giới hạn tài nguyên; chỉ tạo VM/NIC hoặc bật hỗ trợ virtualization bằng GUI nếu môi trường không cung cấp CLI/API đủ quyền. Nếu có CLI/API đã được cấp quyền, Claude tiếp tục tự làm trong phạm vi dự án.
-- **Kiểm chứng:** inventory của hypervisor xác nhận VM/NIC; trên VM chạy `cat /etc/os-release`, `uname -m`, `ip -br address`, `ip route`, `free -h`, `df -h`. So sánh địa chỉ/interface/route với sơ đồ và kiểm tra TCP giữa đúng các host. Ping đơn lẻ không đủ để kết luận đạt.
+- **Trạng thái:** PENDING_ENVIRONMENT; liên quan G1–G2. HOST-MAC đã đo; hai máy Windows và thiết bị mạng chưa có thông tin.
+- **Đã biết (28/10/2026):** nhóm chọn 4 VM trên 3 máy vật lý (1 Mac + 2 Windows); 05/11/2026 chốt: Mac (Trường) chạy NiFi; WIN-A (Trung) chạy DB + API thành hai VM; WIN-B (Phước) chạy FTP. HOST-MAC: macOS 27.0.1, Apple M2 Pro arm64 10 nhân, RAM 32 GiB, disk trống ≈60 GiB, UTM 4.7.5 có `utmctl`, đang nối mạng qua Wi-Fi `en0`. Thiết kế và vị trí VM đề xuất: [DEPLOYMENT_ARCHITECTURE.md](DEPLOYMENT_ARCHITECTURE.md). Không tự coi số VM là yêu cầu đã được thầy chốt.
+- **Prerequisite:** cấu hình hai máy Windows (edition, CPU/kiến trúc, RAM, disk trống, virtualization trong firmware, hypervisor đã cài); điện thoại làm hotspot chung cho 3 máy (iPhone/Android, nhóm không có router riêng), subnet thật và kết quả thử client isolation; quyền tạo VM trên từng máy.
+- **Artifact:** đã có `docs/DEPLOYMENT_ARCHITECTURE.md` (thiết kế, còn placeholder). **PLANNED:** inventory mẫu, version manifest theo từng VM/kiến trúc, script provision và hướng dẫn tạo VM bridged cho UTM và hypervisor Windows.
+- **Thao tác người dùng tối thiểu:** Claude chỉ truy cập trực tiếp được HOST-MAC. Trên mỗi máy Windows, mở PowerShell thường (không cần admin), chạy các lệnh dưới và gửi kết quả (không chứa secret); nếu dòng `systeminfo` không ra gì do Windows tiếng Việt, gửi đoạn cuối của `systeminfo`. Chọn thiết bị mạng; tạo VM bằng GUI hypervisor nếu không có CLI/SSH để Claude làm thay.
+
+  ```powershell
+  Get-CimInstance Win32_OperatingSystem | Select-Object Caption, Version, OSArchitecture
+  Get-CimInstance Win32_Processor | Select-Object Name, NumberOfLogicalProcessors
+  Get-CimInstance Win32_ComputerSystem | Select-Object @{n='RAM_GiB';e={[math]::Round($_.TotalPhysicalMemory/1GB,1)}}
+  Get-PSDrive -PSProvider FileSystem | Select-Object Name, @{n='Free_GiB';e={[math]::Round($_.Free/1GB,1)}}
+  systeminfo | Select-String 'Hyper-V|Virtualization|hypervisor'
+  Get-ItemProperty 'HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*' -ErrorAction SilentlyContinue | Where-Object DisplayName -match 'VirtualBox|VMware' | Select-Object DisplayName, DisplayVersion
+  Get-NetAdapter | Where-Object Status -eq 'Up' | Select-Object Name, InterfaceDescription, LinkSpeed
+  ```
+
+- **Kiểm chứng:** inventory của hypervisor xác nhận VM/NIC bridged; trên VM chạy `cat /etc/os-release`, `uname -m`, `ip -br address`, `ip route`, `free -h`, `df -h`. So sánh địa chỉ/interface/route với sơ đồ và kiểm tra TCP giữa đúng các VM trên các host khác nhau, kể cả HOST-MAC ↔ VM1 bridged trên chính nó. Ping đơn lẻ không đủ để kết luận đạt.
 - **Tác động:** chưa có VM/mạng phù hợp thì chưa thể xác minh provisioning và dịch vụ Linux; vẫn làm được code, cấu hình mẫu, fixtures và runbook.
 
 ## MA-02 — IP, SSH và quyền quản trị Linux
 
 - **Trạng thái:** PENDING_ENVIRONMENT; liên quan G1–G2.
-- **Prerequisite:** IP/hostname từng VM, cổng SSH, username, phương thức xác thực, host key fingerprint tin cậy, phạm vi sudo và đường console khôi phục khi thay đổi mạng.
+- **Prerequisite:** IP/hostname từng VM, cổng SSH, username và SSH public key riêng của từng thành viên (người phụ trách có sudo trên VM mình, người khác chỉ xem — [DEPLOYMENT_ARCHITECTURE 7.1](DEPLOYMENT_ARCHITECTURE.md#71-thành-viên-kiểm-tra-server-của-nhau)), phương thức xác thực, host key fingerprint tin cậy, phạm vi sudo và đường console khôi phục khi thay đổi mạng.
 - **Artifact Claude cần chuẩn bị — PLANNED:** inventory không chứa secrets, script preflight SSH/sudo, cấu hình mạng/firewall theo nguồn–đích, script provision/verify có thể chạy lại và phương án rollback.
 - **Thao tác người dùng tối thiểu:** cung cấp endpoint và tài khoản quản trị qua cơ chế an toàn; cài SSH hoặc thêm public key bằng console khi SSH chưa có. Chỉ cấp những quyền thực sự cần; không gửi private key vào chat hoặc commit vào Git. Nếu sudo cần nhập mật khẩu tương tác mà công cụ không hỗ trợ, người dùng chạy chính xác bước đã chuẩn bị trong VM.
 - **Kiểm chứng:** từ host quản trị chạy `ssh -o BatchMode=yes <user>@<vm> 'id; hostname'` khi dùng khóa đã thiết lập. Trên VM kiểm tra `sudo -l`; `sudo -n true` chỉ kiểm tra quyền sudo không tương tác, thất bại không tự chứng minh tài khoản không có sudo. Trước khi bật firewall phải có rule SSH đúng nguồn và console/rollback; sau đó mở phiên SSH thứ hai để kiểm tra.

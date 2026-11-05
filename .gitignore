@@ -1,1 +1,47 @@
+# Máy ảo — không commit
+*.utm/
+*.utm
+*.vdi
+*.vmdk
+*.vhd
+*.vhdx
+*.qcow2
+*.iso
+*.ova
+
+# Secrets — chỉ commit file mẫu (*.example)
+.env
+*.env
+!*.env.example
+!.env.example
+*.key
+*.pem
+*.p12
+*.pfx
+*.jks
+*.crt
+id_rsa*
+id_ed25519*
+!*.pub
+
+# Dữ liệu NiFi đang chạy, backup, output thật
+flowfile_repository/
+content_repository/
+provenance_repository/
+database_repository/
+state/
+backup/
+backups/
+output/
+rejected/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# macOS / editor
 .DS_Store
+.vscode/
+.idea/
