@@ -1,0 +1,7 @@
+{
+  "shifts": [
+    {"id": "S1", "name": "Ca hành chính", "start": "08:00", "end": "17:00", "grace": 10},
+    {"id": "S2", "name": "Ca sáng", "start": "06:00", "end": "14:00", "grace": 0},
+    {"id": "S3", "name": "Ca chiều", "start": "14:00", "end": "22:00", "grace": 0}
+  ]
+}

@@ -59,6 +59,21 @@ Status: NOT_RUN | PENDING_ENVIRONMENT | PASS | FAIL | BLOCKED
 Remaining action / limitation:
 ```
 
+## Tiến độ VM2/VM4 trên HOST-WIN-A (Trung) — 06/11/2026
+
+Trạng thái gate không đổi (G1 PENDING_ENVIRONMENT, G2 NOT_RUN) vì chưa có mạng lab, IP tĩnh,
+firewall và kết nối từ VM1. Các kiểm tra dưới đây chỉ chạy **cục bộ trong từng VM**, không thay cho TC-03/TC-05.
+
+| Hạng mục | Đã làm | Còn thiếu |
+|---|---|---|
+| HOST-WIN-A | Windows 11 Home, i9-12900H 20 luồng, RAM 15,7 GiB, ổ D trống 58 GiB, VirtualBox 7.2.20 (đang chạy trên nền Hyper-V/VBS), Wi-Fi Killer AX1650i | IP host trên hotspot |
+| VM2 `db` | Ubuntu 24.04.4 amd64, 1 vCPU/2 GiB/25 GiB, NIC1 bridged (Wi-Fi, DHCP thất bại như dự kiến), NIC2 NAT cho apt + SSH `127.0.0.1:2222`. MySQL 8.0.46-0ubuntu0.24.04.4, enabled/active, nghe 127.0.0.1:3306, TZ hệ thống Asia/Ho_Chi_Minh, mysqld `+00:00`. Đã nạp `sql/01_schema.sql` + `02_seed.sql`; `99_verify.sql` ra 50/45/5, 5 phòng ban | IP tĩnh lab, `bind-address`, user `db_reader` (template đã có, đã thử trên MySQL 8.0 khác), UFW, user SSH thành viên, TC-05 từ VM1 |
+| VM4 `api` | Ubuntu 24.04.4 amd64, 1 vCPU/1 GiB/25 GiB, NIC như VM2 (SSH `127.0.0.1:2223`). Python 3.12.3; `api/deploy/install.sh` cài `nt132-api.service` (user `nifi-source-api`, enabled/active, Gunicorn 23.0.0 nghe 127.0.0.1:5000); `api/deploy/smoke_test.sh` 8 PASS / 0 FAIL | Bind IP lab, UFW, user SSH thành viên, TC-10..TC-13 từ NiFi |
+
+Artifact mới: `sql/`, `infra/db/zz-nt132.cnf`, `api/` (app, lock, systemd unit, install/smoke scripts, `.env.example`),
+`tests/test_api_contract.py` (18 test hợp đồng bằng Flask test client — không phải test tích hợp).
+Evidence ảnh do Trung giữ, sẽ đưa vào `evidence/` sau khi che secrets.
+
 ## Đầu vào cần bổ sung và bước tiếp theo
 
 | Mục | Trạng thái | Việc tiếp theo |

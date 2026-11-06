@@ -1,0 +1,10 @@
+# Khóa phiên bản đầy đủ (pip freeze trên Python 3.12, 06/11/2026). Cài: pip install -r requirements.lock
+blinker==1.9.0
+click==8.5.0
+Flask==3.1.2
+gunicorn==23.0.0
+itsdangerous==2.2.0
+Jinja2==3.1.6
+MarkupSafe==3.0.4
+packaging==26.3
+Werkzeug==3.1.9

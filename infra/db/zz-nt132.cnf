@@ -1,0 +1,7 @@
+# /etc/mysql/mysql.conf.d/zz-nt132.cnf — cấu hình MySQL cho VM2 db.lab
+[mysqld]
+# Lưu và sinh updated_at theo UTC (SPECS 5.2)
+default-time-zone = '+00:00'
+character-set-server = utf8mb4
+collation-server = utf8mb4_0900_ai_ci
+# bind-address = <IP_VM2>   # bật ở bước mạng lab; hiện chỉ nghe 127.0.0.1

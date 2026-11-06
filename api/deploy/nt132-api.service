@@ -1,0 +1,24 @@
+# /etc/systemd/system/nt132-api.service — API nguồn ca làm việc (VM4 api.lab)
+[Unit]
+Description=NT132 source API (shifts) - Flask/Gunicorn
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=nifi-source-api
+Group=nifi-source-api
+WorkingDirectory=/opt/nt132-api
+EnvironmentFile=/etc/nt132-api/api.env
+ExecStart=/opt/nt132-api/venv/bin/gunicorn -c /opt/nt132-api/gunicorn.conf.py app:app
+Restart=on-failure
+RestartSec=3
+# Giới hạn quyền: không root, chỉ đọc hệ thống
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+
+[Install]
+WantedBy=multi-user.target
