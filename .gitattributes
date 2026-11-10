@@ -1,0 +1,4 @@
+# Giữ script triển khai chạy được khi chuyển Windows -> Ubuntu.
+*.sh text eol=lf
+*.sql text eol=lf
+*.py text eol=lf
