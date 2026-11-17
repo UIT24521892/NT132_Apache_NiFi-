@@ -1,264 +1,114 @@
-# Kiến trúc triển khai (Deployment Architecture) — Apache NiFi, NT132
+# Cấu hình VM đang dùng — Apache NiFi, NT132
 
-Cập nhật: 05/11/2026 (Asia/Ho_Chi_Minh). **Trạng thái: thiết kế, chưa provision.**
-Giá trị dạng `<...>` là placeholder, phải thay bằng số liệu thật; G1 vẫn `PENDING_ENVIRONMENT`.
+Cập nhật: 17/11/2026 (Asia/Ho_Chi_Minh).
 
-Tài liệu trả lời: NiFi và ba dịch vụ nguồn chạy trên máy nào, nối với nhau qua mạng và cổng nào,
-ai truy cập từ đâu, dữ liệu và secrets nằm ở đâu. Luồng dữ liệu bên trong NiFi xem
-[SPECS.md mục 3 và 6](../SPECS.md#3-kiến-trúc-nifi); hành vi và tiêu chí nghiệm thu vẫn theo SPECS.
+Từ 16/11/2026 cả 4 VM chạy trên **UTM của Mac**, mạng **Shared Network** `192.168.64.0/24`
+(Mac `bridge100` = `192.168.64.1`, gateway/DNS cho VM). Mạng này nằm trong Mac nên không phụ thuộc
+Wi-Fi đang dùng; Wi-Fi chỉ cần khi VM ra Internet (apt/pip). Bố trí hotspot/VirtualBox trước đó
+là lịch sử, xem [evidence 11/11](../evidence/G2/2026-11-11_hotspot_ftp-connectivity.md).
+Ba VM nguồn do agent cài/kiểm tra qua SSH ngày 17/11:
+[evidence UTM](../evidence/G2/2026-11-17_utm_source-vms.md). VM1 theo
+[evidence bootstrap](../evidence/G2/2026-11-09_vm1_nifi-bootstrap.md).
 
-## 1. Quyết định triển khai
+## 1. Các VM đang dùng
 
-| Quyết định | Nội dung | Nguồn |
-|---|---|---|
-| Profile | 4 VM, mỗi VM một dịch vụ: NiFi, MySQL, vsftpd, API | Nhóm chốt 28/10/2026; thầy chưa xác nhận |
-| Máy vật lý | 4 VM chạy trên 3 máy: 1 MacBook Apple Silicon + 2 laptop Windows, mỗi thành viên phụ trách máy của mình | Nhóm, 28/10 và 05/11/2026 |
-| Mạng | Hotspot Wi-Fi của một điện thoại trong nhóm làm LAN lab; mỗi VM một NIC bridged, IP tĩnh | Nhóm không có router riêng (05/11/2026) |
-| Đặt VM | NiFi trên Mac (Trường); DB + API trên WIN-A (Trung), hai VM riêng; FTP trên WIN-B (Phước) | Nhóm chốt 05/11/2026 |
-| Truy cập chéo | Thành viên xem server của nhau qua SSH bằng tài khoản riêng; không mở cổng dịch vụ cho máy thành viên | Mục 7.1 |
+| VM | Hostname / IP | OS | Dịch vụ |
+|---|---|---|---|
+| VM1 NiFi | `24521892` / `192.168.64.101` tĩnh (`nifi.lab`), giữ thêm `192.168.92.92` cũ | Kali Rolling 2026.2 ARM64 | NiFi 2.12.0, OpenJDK 21.0.13; HTTPS localhost, systemd |
+| VM2 DB | `db` / `192.168.64.102` tĩnh (`db.lab`) | Ubuntu 24.04.5 LTS aarch64, 2 vCPU, 2 GB, 9.3 GB | MySQL 8.0.46, `hr_db`, nghe `127.0.0.1` + `192.168.64.102:3306` |
+| VM3 FTP | `ftp` / `192.168.64.103` tĩnh (`ftp.lab`) | Ubuntu 24.04.5 LTS aarch64, 2 vCPU, 2 GB, 12 GB | vsftpd, inbox `/checkin`, passive 40000–40010 |
+| VM4 API | `api` / `192.168.64.104` tĩnh (`api.lab`) | Ubuntu 24.04.5 LTS aarch64, 2 vCPU, 2 GB, 12 GB | Flask/Gunicorn `nt132-api.service`, nghe `192.168.64.104:5000` |
 
-VM nằm trên ba máy khác nhau nên mạng host-only trong một máy không còn dùng được. Cả ba kết nối
-NiFi → DB, NiFi → API và NiFi → FTP đi qua mạng vật lý, vì vậy bind address, route và firewall phải đúng như một
-hệ thống nhiều máy thật.
+Quản trị VM nguồn: user `anhtruong` (sudo), SSH key `~/.ssh/nt132_lab` trên Mac.
+Khi demo chỉ bật 4 VM này; Mac còn VM Windows/Kali cũ dùng DHCP cùng dải (`.3`, `.4`).
+Nếu Wi-Fi nơi demo cũng là `192.168.64.0/24` thì Mac bị trùng route — kiểm tra `ipconfig getifaddr en0`.
 
-Lý do đặt VM:
+## 2. VM1 — Kali / NiFi
 
-- Mỗi thành viên dựng và chịu trách nhiệm dịch vụ trên máy của mình: Trường — NiFi; Trung — MySQL
-  và Flask API; Phước — vsftpd và simulator máy chấm công.
-- NiFi tốn tài nguyên nhất (JVM, FlowFile/Content/Provenance repository) → máy mạnh nhất. Mac cũng là
-  máy chạy browser demo.
-- DB và API tách thành hai VM riêng trên WIN-A dù cùng một người làm, để giữ profile mỗi VM một dịch vụ,
-  firewall và tài khoản dịch vụ độc lập. Cả hai đều nhẹ (tổng ≈3 GiB RAM).
-- Cả ba luồng JDBC, REST, FTP đều đi qua ranh giới máy vật lý, nên kiểm thử firewall allow/deny có ý nghĩa.
+| Mục | Cấu hình đã ghi nhận |
+|---|---|
+| Tài khoản quản trị | `anhtruong`, sudo `(ALL : ALL) ALL` |
+| Init / mạng | systemd, NetworkManager (`nmcli`) |
+| SSH | Cổng 22, service `ssh` active/enabled; Mac → Kali được người dùng xác nhận 11/11; host key chưa có evidence đối chiếu |
+| NIC `eth0` | NetworkManager `Wired connection 1` manual `192.168.64.101/24` + `192.168.92.92/24` (17/11); trước đó DHCP `.2` |
+| Default route | `192.168.64.1` (UTM Shared Network), DNS `192.168.64.1` |
+| JDBC driver | `/opt/nifi/drivers/mysql-connector-j-26.10.0.jar` (root:nifi 0640, dir 0750, đặt 10/11); SHA-256 `cef70caf532833c9ab8f41f74773ce22c08bf503fad215c9c2ee1e9db87e759e`, SHA-1 khớp `.sha1`/`.sha256` trên [Maven Central](https://repo1.maven.org/maven2/com/mysql/mysql-connector-j/26.10.0/) (kiểm 17/11) |
+| Java shell mặc định | `openjdk 25.0.5-ea` (17/11); service NiFi vẫn dùng `JAVA_HOME` JDK 21 |
+| Secrets nguồn | `/root/nt132-secrets/` root 0600: `reader.cnf`, `api.key`, `api.hdr`, `ftp_nifi_fetch.pass`, `netrc_ftp` |
+| Múi giờ | Đã đổi sang `Asia/Ho_Chi_Minh`; UI NiFi hiện `ICT` |
+| NiFi home | `/opt/nifi/nifi-2.12.0` |
+| JDK service sử dụng | `JAVA_HOME=/usr/lib/jvm/java-21-openjdk-arm64` |
+| Package JDK/JRE | `openjdk-21-jdk-headless`, `openjdk-21-jre-headless`: `21.0.13+9-1 arm64`; `javac 21.0.13` |
+| User / group dịch vụ | `nifi:nifi`, uid 999 / gid 981 |
+| Unit | `/etc/systemd/system/nifi.service`, enabled/active; bản trong repo: [nifi.service](../infra/nifi/nifi.service) |
+| UI trong Kali | `https://localhost:8443/nifi`; listener `127.0.0.1:8443` |
+| Xác thực hiện tại | Single-user, chứng chỉ tự sinh; chưa có CA/SAN lab hoặc RBAC ba vai trò |
+| Config / log | `/opt/nifi/nifi-2.12.0/conf`, `/opt/nifi/nifi-2.12.0/logs` |
+| Repositories / state | Giữ đường dẫn mặc định trong NiFi home; chưa ghi nhận di chuyển |
+| Output | `/srv/nt132/output/{employees,shifts,attendance_events}` |
+| Rejected | `/srv/nt132/rejected/{files,records,dead-letter}` |
+| Quyền output/rejected | `nifi:nifi`, mode `0750` |
 
-## 2. Sơ đồ máy vật lý
+Kali ở UTM Shared Network; cấu hình bridge Wi-Fi/hotspot ngày 11/11 là lịch sử.
+SSH bằng key `nt132_lab`, `/etc/hosts` có khối `nt132-lab`. Client MySQL là MariaDB 11.8.9.
+Người dùng chọn thao tác UI trong Kali; truy cập NiFi từ Mac chưa xác nhận.
+Java mặc định của shell chưa được kiểm tra lại; service trỏ riêng vào JDK 21 như unit.
+Khung 5 PG, Parameter Context và PutFile lưu tại [nifi/README.md](../nifi/README.md).
+
+Binary đã dùng: `nifi-2.12.0-bin.zip`, nguồn [Apache 2.12.0](https://downloads.apache.org/nifi/2.12.0/),
+checksum đã trả `OK` ngày 09/11. SHA-512 đã lưu từ đợt setup:
 
 ```text
-  ┌────────────────────────────────────────────────────────────────────────────┐
-  │ PHONE-AP: hotspot điện thoại của nhóm — mạng lab <LAB_SUBNET>              │
-  │ WPA2/WPA3 · chỉ 3 laptop kết nối · VM dùng IP tĩnh · không thuộc mạng trường│
-  │ Internet (4G) chỉ dùng khi cài gói/NTP; demo chạy trong LAN                │
-  └───────────┬──────────────────────────┬──────────────────────────┬──────────┘
-              │                          │                          │
-  ┌───────────┴──────────┐   ┌───────────┴──────────┐   ┌───────────┴──────────┐
-  │ HOST-MAC · Trường    │   │ HOST-WIN-A · Trung   │   │ HOST-WIN-B · Phước   │
-  │ macOS · Apple M2 Pro │   │ Windows · <HV>       │   │ Windows · <HV>       │
-  │ UTM (bridged)        │   │ <HV> (bridged)       │   │ <HV> (bridged)       │
-  │                      │   │                      │   │                      │
-  │ [VM1 nifi.lab]       │   │ [VM2 db.lab]         │   │ [VM3 ftp.lab]        │
-  │                      │   │ [VM4 api.lab]        │   │                      │
-  │                      │   │                      │   │                      │
-  │ Browser 3 role       │   │ SSH client           │   │ Simulator máy        │
-  │ SSH client           │   │                      │   │ chấm công (Python)   │
-  │                      │   │                      │   │ SSH client           │
-  └──────────────────────┘   └──────────────────────┘   └──────────────────────┘
-  [VMx] = VM Ubuntu Server 24.04, NIC bridged vào card mạng nối LAN lab
+5891039ccf15234bb21c2d1ce65027357ca7603ad8fdfc946dd4b6499ab8061fb07a6a56f8e8c5bb7635d446354ca7cc76ba40e55921818931f193a75f247334
 ```
 
-`<HV>` là hypervisor trên Windows (VirtualBox, VMware Workstation hoặc Hyper-V), chưa chốt.
+### Lệnh vận hành trên Terminal Kali
 
-## 3. Sơ đồ kết nối dịch vụ
+Kiểm tra service, cổng và log:
 
-```text
-┌──────────────────────────┐                 ┌───────────────────────────┐
-│ VM1 nifi.lab  (HOST-MAC) │ JDBC 3306       │ VM2 db.lab (HOST-WIN-A)   │
-│ NiFi 2.12.0 · JDK 21     ├────────────────>│ MySQL 8.0 · hr_db         │
-│ :8443 HTTPS              │                 └───────────────────────────┘
-│                          │                 ┌───────────────────────────┐
-│ PG-JDBC   PG-REST        │ HTTP 5000       │ VM4 api.lab (HOST-WIN-A)  │
-│ PG-FTP    PG-OUTPUT      ├────────────────>│ Flask + Gunicorn          │
-│ PG-ERROR                 │                 └───────────────────────────┘
-│                          │                 ┌───────────────────────────┐
-│ /srv/nt132/output        │ FTP 21+passive  │ VM3 ftp.lab (HOST-WIN-B)  │
-│ /srv/nt132/rejected      ├────────────────>│ vsftpd · /checkin         │
-└─────────────^────────────┘                 └─────────────^─────────────┘
-              │ HTTPS 8443                                 │ FTP upload .tmp → .csv
-      Browser trên HOST-MAC                      Simulator trên HOST-WIN-B
-      client cert admin /
-      operator / manager
+```sh
+sudo systemctl status nifi --no-pager --lines=10
+systemctl is-enabled nifi
+sudo ss -ltnp 'sport = :8443'
+sudo journalctl -u nifi -n 50 --no-pager
+sudo tail -n 50 /opt/nifi/nifi-2.12.0/logs/nifi-app.log
 ```
 
-Mũi tên chỉ chiều mở kết nối TCP. NiFi luôn là bên chủ động lấy dữ liệu; nguồn không đẩy vào NiFi.
-SSH quản trị của thành viên không vẽ ở đây; xem mục 7.1.
+Khởi động, dừng hoặc khởi động lại khi cần (chọn lệnh tương ứng):
 
-## 4. Máy vật lý
+```sh
+sudo systemctl start nifi
+sudo systemctl stop nifi
+sudo systemctl restart nifi
+```
 
-| Host | OS / CPU | RAM | Disk trống | Hypervisor | Card nối LAN lab | IP host | Vai trò ngoài VM |
-|---|---|---|---|---|---|---|---|
-| HOST-MAC | macOS 27.0.1 · Apple M2 Pro (arm64), 10 nhân | 32 GiB | ≈75 GiB (đo 05/11/2026) | UTM 4.7.5 | `en0` Wi-Fi | `<IP_MAC>` | Trường: VM1; browser demo; giữ CA/backup ngoài repo |
-| HOST-WIN-A | `<edition · CPU · arch>` | `<RAM>` | `<disk>` | `<HV>` | `<card>` | `<IP_WIN_A>` | Trung: VM2 + VM4 |
-| HOST-WIN-B | `<edition · CPU · arch>` | `<RAM>` | `<disk>` | `<HV>` | `<card>` | `<IP_WIN_B>` | Phước: VM3; simulator máy chấm công |
+Không xóa repositories/state/flow khi xử lý lỗi. Backup phải gồm cấu hình, flow,
+state/repositories cần bảo toàn queue, output/rejected và secrets lưu riêng theo
+[SPECS 7.3](../SPECS.md#73-backuprestore-drill); chưa có restore drill.
 
-Yêu cầu tối thiểu cho máy Windows:
+## 3. Cấu hình VM nguồn (17/11/2026)
 
-- WIN-A cần thêm ≈3 GiB RAM và 30 GiB disk cho VM2 + VM4; WIN-B cần thêm ≈1 GiB RAM và 15 GiB disk cho VM3,
-  ngoài phần Windows tự dùng (khuyến nghị tổng RAM ≥ 8 GiB).
-- Bật virtualization trong firmware. Nên dùng cùng một hypervisor trên hai máy Windows để runbook chung.
+Chung cho ba VM: ufw deny incoming, SSH 22 từ `192.168.64.0/24`; netplan `/etc/netplan/60-nt132-static.yaml` (gateway/DNS `192.168.64.1`),
+cloud-init network disabled; `/etc/hosts` có khối `nt132-lab` cho `nifi/db/ftp/api.lab`.
+Mã nguồn chép vào `~/nt132` (DB/API từ `sql/`, `api/`, `infra/db/` — commit `4eacec3`, đã merge vào `main`, FTP từ `infra/ftp/`).
+Secrets sinh trên VM, nằm trong `/root/nt132-secrets/` (0700); không đưa vào Git/chat.
 
-Mac chỉ chạy VM1 (30 GiB disk khai báo, đĩa UTM chỉ chiếm theo dữ liệu thật); disk trống ≈75 GiB đủ cho
-thêm một VM restore ở TC-28, xem mục 11.
-
-## 5. Inventory VM
-
-| VM | Hostname | Host | Arch | IP lab | vCPU / RAM / disk | Dịch vụ · cổng | Tài khoản dịch vụ |
-|---|---|---|---|---|---|---|---|
-| VM1 | nifi.lab | HOST-MAC | arm64 | `<IP_VM1>` | 2 / 4 GiB / 30 GiB | NiFi HTTPS 8443 | `nifi` |
-| VM2 | db.lab | HOST-WIN-A | `<arch>` | `<IP_VM2>` | 1 / 2 GiB / 15 GiB | MySQL 3306 | `mysql` của package; DB user nguồn chỉ SELECT |
-| VM3 | ftp.lab | HOST-WIN-B | `<arch>` | `<IP_VM3>` | 1 / 1 GiB / 15 GiB | vsftpd 21, 40000–40010 | FTP `clock_uploader` (ghi), `nifi_fetch` (chỉ đọc) |
-| VM4 | api.lab | HOST-WIN-A | `<arch>` | `<IP_VM4>` | 1 / 1 GiB / 15 GiB | Gunicorn 5000 | `nifi-source-api` |
-
-Tài nguyên lấy theo [SPECS 4.2](../SPECS.md#42-inventory-minh-họa--phải-thay-bằng-thông-số-thật), phải đo lại.
-VM trên Mac là arm64 (UTM chế độ Virtualize, ISO arm64; không giả lập x86_64), VM trên Windows nhiều khả năng là x86_64: ISO, package version và checksum
-ghi riêng từng VM trong version manifest. Giữ cùng phiên bản NiFi/JDK/MySQL/Python giữa các VM.
-NiFi, JDK và Connector/J chạy trên JVM nên cấu hình flow không đổi theo kiến trúc CPU.
-
-## 6. Mạng
-
-Nhóm không có router riêng nên LAN lab là **hotspot Wi-Fi của một điện thoại** (gọi là PHONE-AP).
-Với 3 laptop và 4 VM, hotspot đủ dùng; điều kiện là kiểm tra sớm các điểm dưới đây ở TC-01.
-
-- **Thiết bị:** luôn dùng **cùng một điện thoại** cho mọi buổi dựng, test và demo, để subnet không đổi.
-  Chỉ 3 laptop được kết nối; điện thoại khác không vào hotspot này. Không dùng Wi-Fi trường, ký túc xá
-  hay quán: thường bật client isolation, IP thay đổi, và nhóm không được cấp quyền cấu hình mạng đó.
-  Nếu sau này có router/switch thì chỉ cần đổi subnet trong inventory; thiết kế còn lại giữ nguyên.
-- **Subnet do điện thoại quyết định**, không cấu hình được như router:
-  - iPhone thường cấp `172.20.10.0/28`, gateway `172.20.10.1`: chỉ 14 địa chỉ, vẫn đủ cho 3 host + 4 VM.
-    Netmask trong netplan phải là `/28`, không phải `/24`.
-  - Android: dải tùy hãng và phiên bản; một số máy đổi subnet mỗi lần bật lại hotspot. Kiểm tra bằng cách
-    tắt/bật hotspot hai lần và so IP. Nếu subnet đổi, dùng điện thoại khác cho lab.
-  - Ghi subnet, gateway, DNS thật vào inventory (`<LAB_SUBNET>`, `<LAB_GATEWAY>`).
-- **Client isolation:** phải xác nhận các laptop nói chuyện được với nhau trước khi tạo VM, ví dụ từ
-  WIN-A kết nối TCP tới một cổng đang mở trên Mac. Nếu bị chặn thì hotspot đó không dùng được.
-- **Địa chỉ:** hotspot không có DHCP reservation. Đặt IP tĩnh cho 4 VM ở cuối dải (iPhone: ví dụ `.10–.13`),
-  để phần đầu dải cho DHCP. IP của cả 3 host nằm trong rule firewall (SSH, simulator) nên cũng cố định:
-  Windows đặt IP tĩnh riêng cho profile Wi-Fi của hotspot (Settings → Wi-Fi → mạng đó → IP assignment);
-  Mac tạo Network Location riêng cho lab. Gateway/DNS là IP của điện thoại.
-- **NIC của VM:** một NIC bridged vào card Wi-Fi của host, nên VM có IP riêng và các máy khác truy cập
-  trực tiếp. Không port-forward qua host: FTP passive và rule firewall theo IP nguồn sẽ sai.
-- **Bridged qua Wi-Fi:** chuẩn Wi-Fi chỉ chấp nhận MAC của host, nên hypervisor thay MAC của VM khi đi qua
-  Wi-Fi; DHCP trong VM có thể thất bại, vì vậy dùng IP tĩnh. Thử bridged trên từng hypervisor ngay ở
-  TC-01 (ping và TCP giữa VM trên các host khác nhau), trước khi cài dịch vụ.
-- **Vận hành điện thoại:** cắm sạc, tắt chế độ tự tắt hotspot khi không có thiết bị (nếu máy có tùy chọn),
-  không mang điện thoại đi chỗ khác khi demo. Trên iPhone, nếu laptop không thấy mạng thì bật
-  "Maximize Compatibility" (chuyển sang 2.4 GHz).
-- **Dung lượng 4G:** tải ISO Ubuntu, NiFi, Connector/J trên mạng khác trước rồi chép vào máy, ghi checksum.
-  Hotspot chỉ dùng cho `apt`, `pip` và NTP. Demo chạy hoàn toàn trong LAN, không cần Internet.
-- **Phân giải tên:** `/etc/hosts` trên 4 VM và trên máy chạy browser (Mac: `/etc/hosts`; Windows:
-  `C:\Windows\System32\drivers\etc\hosts`). Browser phải vào đúng tên có trong SAN của certificate NiFi.
-- **Giờ:** đồng bộ NTP trong từng VM (systemd-timesyncd) khi có Internet; đo lệch giờ giữa các VM
-  trước demo. Nghiệp vụ dùng `Asia/Ho_Chi_Minh`.
-- **Firewall:** UFW trong từng VM là lớp kiểm soát chính. Firewall của host chỉ ảnh hưởng tiến trình
-  chạy trên host (browser, simulator, SSH client); xác nhận thực tế ở TC-04.
-
-## 7. Ma trận kết nối và firewall
-
-| # | Nguồn | Đích | TCP | Đi qua máy vật lý | Mục đích | UFW trên đích cho phép từ |
-|---|---|---|---|---|---|---|
-| 1 | 3 host của thành viên | VM1–VM4 | 22 | có, trừ host tự vào VM của mình | SSH quản trị/kiểm tra (mục 7.1) | `<IP_MAC>`, `<IP_WIN_A>`, `<IP_WIN_B>` |
-| 2 | HOST-MAC (browser) | VM1 | 8443 | trong Mac | NiFi UI/API | `<IP_MAC>` |
-| 3 | VM1 | VM2 | 3306 | Mac → WIN-A | JDBC | `<IP_VM1>` |
-| 4 | VM1 | VM4 | 5000 | Mac → WIN-A | REST | `<IP_VM1>` |
-| 5 | VM1 | VM3 | 21, 40000–40010 | Mac → WIN-B | ListFTP/FetchFTP | `<IP_VM1>` |
-| 6 | HOST-WIN-B (simulator) | VM3 | 21, 40000–40010 | trong WIN-B | Upload CSV | `<IP_WIN_B>` |
-
-Mọi VM mặc định chặn incoming, cho established/related. Bind và tài khoản đi cùng firewall:
-
-- MySQL `bind-address = <IP_VM2>`; user nguồn `'<db_reader>'@'<IP_VM1>'` chỉ SELECT, không dùng root từ xa.
-- Gunicorn bind `<IP_VM4>:5000`, debug off.
-- vsftpd `pasv_enable=YES`, `pasv_min_port=40000`, `pasv_max_port=40010`, `pasv_address=<IP_VM3>`.
-
-Ca phải bị chặn để kiểm thử ở TC-04, ví dụ: HOST-WIN-B → VM2:3306, HOST-WIN-A → VM4:5000,
-HOST-WIN-A → VM3:21, HOST-MAC → VM2:3306, VM4 → VM2:3306 (cùng host WIN-A nhưng API không cần DB). Kiểm tra bằng kết nối TCP/ứng dụng, không chỉ ping.
-
-### 7.1. Thành viên kiểm tra server của nhau
-
-Mỗi thành viên xem được cả 4 VM, nhưng chỉ toàn quyền trên VM mình phụ trách. Cổng dịch vụ
-(3306, 5000, 21) vẫn chỉ mở cho NiFi và simulator như bảng trên; thành viên kiểm tra qua SSH.
-
-| Lớp | Cấu hình |
-|---|---|
-| Tài khoản | Mỗi thành viên một user Linux riêng trên cả 4 VM; không dùng chung một user |
-| Đăng nhập | SSH bằng public key; `PasswordAuthentication no`, `PermitRootLogin no`; private key chỉ ở máy từng người |
-| Người phụ trách VM | Thuộc nhóm `sudo` trên VM đó |
-| Thành viên khác | Không sudo; thuộc nhóm chỉ xem để đọc log (`systemd-journal`, `adm`), chạy `systemctl status`, đọc cấu hình không chứa secret |
-| Secrets | File env, keystore, mật khẩu DB/FTP mode 0600, chủ là service user → nhóm chỉ xem không đọc được |
-| NiFi UI | Thành viên dùng client certificate role operator hoặc manager; chỉ admin sửa flow/policy |
-
-Thành viên khác kiểm tra được, ví dụ:
-
-- VM2: `systemctl status mysql`, `journalctl -u mysql`, `ss -ltnp` để xem MySQL bind đúng IP lab.
-  Truy vấn dữ liệu cần user MySQL chỉ đọc riêng cho thành viên, đăng nhập qua socket cục bộ trên VM2.
-- VM4: `curl http://<IP_VM4>:5000/health` chạy ngay trên VM4, `journalctl -u <API_UNIT>`.
-- VM3: `systemctl status vsftpd`, xem file trong `<FTP_ROOT>/checkin`.
-- VM1: `systemctl status nifi`, đọc `nifi-app.log`, nếu nhóm log được cấp quyền đọc.
-- Muốn dùng công cụ GUI như MySQL Workbench thì đi qua SSH tunnel, ví dụ
-  `ssh -L 3307:localhost:3306 <user>@db.lab`, không mở thêm cổng 3306 cho máy thành viên.
-
-Thành viên chỉ vào được khi máy mình nằm trong cùng mạng lab (cùng hotspot). Làm online mỗi người
-một nơi thì cần VPN overlay; phương án này chưa chốt, xem mục 13.
-
-## 8. Phần mềm và thư mục trên từng VM
-
-Đề xuất, xác minh lại khi cài; đường dẫn `/srv/nt132/...` đã cố định trong SPECS 5.5.
-
-| VM | Thành phần | systemd | Cấu hình · dữ liệu · log |
-|---|---|---|---|
-| VM1 | NiFi 2.12.0, OpenJDK 21, MySQL Connector/J `<version>` | `nifi.service` | NiFi home `/opt/nifi/nifi-2.12.0`; repositories + state `<NIFI_DATA_DIR>`; output `/srv/nt132/output`; rejected `/srv/nt132/rejected`; log `<NIFI_LOG_DIR>` |
-| VM2 | `mysql-server` 8.0 từ Ubuntu | `mysql.service` | `/etc/mysql`, `/var/lib/mysql`, `/var/log/mysql` |
-| VM3 | `vsftpd` từ Ubuntu | `vsftpd.service` | `/etc/vsftpd.conf`; inbox `<FTP_ROOT>/checkin`, nhìn từ FTP là `/checkin` |
-| VM4 | Python 3.12 venv, Flask, Gunicorn | `<API_UNIT>.service` | code `/opt/nt132-api`; API key trong file env mode 0600; log journald |
-
-## 9. Ánh xạ flow NiFi → triển khai
-
-| Process Group | Component chạm mạng/đĩa | Đích | Host vật lý |
-|---|---|---|---|
-| PG-JDBC | DBCPConnectionPool | `jdbc:mysql://db.lab:3306/hr_db` | HOST-WIN-A |
-| PG-REST | InvokeHTTP | `http://api.lab:5000/api/shifts` | HOST-WIN-A |
-| PG-FTP | ListFTP, FetchFTP | `ftp.lab:21`, `/checkin`, passive | HOST-WIN-B |
-| PG-OUTPUT | PutFile | `/srv/nt132/output/<dataset>/` trên VM1 | HOST-MAC |
-| PG-ERROR | PutFile | `/srv/nt132/rejected/...` trên VM1 | HOST-MAC |
-
-Hostname, port, path đặt trong Parameter Context: khi đổi IP chỉ sửa hosts/parameter, không sửa Processor.
-
-## 10. Bảo mật trong triển khai
-
-- **NiFi HTTPS:** CA riêng của lab; private key CA giữ trên HOST-MAC, ngoài repo. Server certificate có SAN
-  `nifi.lab` và `<IP_VM1>`. Ba client certificate admin/operator/manager import vào browser trên máy demo.
-- **Secrets:** mật khẩu DB/FTP, API key, mật khẩu keystore nằm trong sensitive parameter và file cục bộ
-  mode 0600; không commit, không gửi qua chat.
-- **Giao thức không mã hóa:** HTTP API và FTP đi qua Wi-Fi của hotspot. Hotspot đặt WPA2/WPA3 với mật khẩu
-  mạnh, chỉ 3 laptop của nhóm kết nối, chỉ dùng dữ liệu giả, và ghi giới hạn này trong báo cáo.
-  FTPS/SFTP là mở rộng.
-
-## 11. Backup và restore
-
-- Backup NiFi theo [SPECS 7.3](../SPECS.md#73-backuprestore-drill) lưu ngoài repo tại `<BACKUP_DIR>` trên
-  HOST-MAC, kèm một bản sao ở ổ hoặc máy khác.
-- Restore drill (TC-28) dùng một VM riêng, chỉ bật khi VM1 đã dừng để hai NiFi không cùng poll nguồn.
-  Đề xuất đặt trên HOST-MAC (cùng kiến trúc arm64 với VM1, còn đủ disk); nếu đặt host khác thì ghi rõ kiến trúc CPU trong evidence.
-- Snapshot của hypervisor trước test phá hủy chỉ là tiện ích, không thay cho backup NiFi.
-
-## 12. Rủi ro khi chạy trên 3 máy
-
-| Rủi ro | Giảm thiểu |
-|---|---|
-| Thiếu một máy khi demo → mất nguồn tương ứng | Script provision chạy lại được để dựng lại VM trên host khác (VM x86_64 không chạy native trên Mac arm64 nên dựng lại thay vì chép image); diễn tập trước demo |
-| Host sleep hoặc Windows Update khởi động lại | Tắt sleep, hoãn update trong buổi demo; dịch vụ autostart (TC-27) |
-| IP đổi khi sang mạng khác | Luôn dùng cùng điện thoại; IP tĩnh; hostname trong Parameter Context và hosts |
-| Hotspot bật client isolation hoặc đổi subnet mỗi lần bật | Kiểm tra trước khi tạo VM (mục 6); đổi sang điện thoại khác |
-| Điện thoại hết pin, tự tắt hotspot, rời phòng | Cắm sạc, tắt auto-off; demo chỉ cần LAN nên mất 4G không ảnh hưởng nếu hotspot vẫn bật (kiểm tra trước) |
-| Bridged qua Wi-Fi không nhận DHCP hoặc không thông | IP tĩnh; thử hypervisor khác; nếu vẫn hỏng thì cần switch + cáp, hoặc đổi sang NAT + port forward (phải cập nhật SPECS 4.2 và firewall theo IP nguồn) |
-| Mac không vào được VM1 bridged trên chính nó | Kiểm tra sớm; nếu gặp, thêm NIC shared/host-only cho đường Mac ↔ VM1 và ghi vào inventory |
-| Lệch giờ giữa các VM | NTP, đo lệch giờ trước demo |
-| Khác kiến trúc arm64/x86_64 | Manifest riêng từng VM, cùng phiên bản phần mềm |
-
-## 13. Thông tin còn thiếu
-
-| Mục | Trạng thái | Bàn giao |
+| VM | Cấu hình | Chưa làm |
 |---|---|---|
-| Cấu hình 2 máy Windows và hypervisor | PENDING_ENVIRONMENT | [MA-01](MANUAL_ACTIONS.md#ma-01--máy-ảo-và-card-mạng) |
-| Loại điện thoại làm hotspot, subnet thật, kết quả kiểm tra client isolation, IP host/VM, SSH | PENDING_ENVIRONMENT | [MA-01](MANUAL_ACTIONS.md#ma-01--máy-ảo-và-card-mạng), [MA-02](MANUAL_ACTIONS.md#ma-02--ip-ssh-và-quyền-quản-trị-linux) |
-| Username và SSH public key của Trường, Trung, Phước | PENDING_ENVIRONMENT | [MA-02](MANUAL_ACTIONS.md#ma-02--ip-ssh-và-quyền-quản-trị-linux) |
-| Làm việc từ xa (VPN overlay Tailscale/ZeroTier) | Chưa chốt; nếu dùng phải cập nhật SPECS 4.2 và mục 6–7 | — |
-| Thầy chấp nhận 4 VM trên 3 máy vật lý | Chưa xác nhận | [MA-05](MANUAL_ACTIONS.md#ma-05--rubric-phạm-vi-và-yêu-cầu-nộp-của-giảng-viên) |
-| Exact version từng package, checksum | NOT_RUN | [SPECS 4.1](../SPECS.md#41-profile-và-phiên-bản) |
+| VM2 DB | `mysql` enabled; `/etc/mysql/mysql.conf.d/zz-nt132.cnf` UTC, utf8mb4, `bind-address = 127.0.0.1,192.168.64.102`; seed 50/45/5, 5 phòng ban; `db_reader@192.168.64.101` SELECT theo cột; ufw 3306 chỉ từ `.101` | Cert TLS MySQL còn tự sinh (không SAN `db.lab`) |
+| VM3 FTP | `setup_vm3.sh 192.168.64.103`; `clock_uploader` (ghi/rename), `nifi_fetch` (chỉ list/read), chroot `/srv/ftp/nt132`, inbox `/checkin`; ufw 21 + 40000–40010 từ `.101` và Mac `.1` | Simulator/fixture |
+| VM4 API | `install.sh 192.168.64.104:5000`; user `nifi-source-api`; key trong `/etc/nt132-api/api.env`; endpoint lab lỗi/chậm bật; ufw 5000 chỉ từ `.101` | — |
+
+## 4. Ma trận kết nối
+
+| Nguồn | Đích | TCP | Mục đích | Trạng thái 17/11 |
+|---|---|---|---|---|
+| Mac (`192.168.64.1`) | VM1–VM4 | 22 | SSH quản trị bằng key | OK cả 4 |
+| Mac | VM1 | 8443 | NiFi UI/API | Chưa mở ngoài localhost |
+| VM1 NiFi | VM2 | 3306 | JDBC, `db_reader` chỉ SELECT | Kali OK, `verify_reader` 5/5; Mac/ftp bị chặn |
+| VM1 NiFi | VM4 | 5000 | HTTP API, `X-API-Key` | Kali 200/401 đúng; Mac/ftp bị chặn |
+| VM1 NiFi | VM3 | 21, 40000–40010 | List/fetch passive | Kali list 226; quyền reader đạt |
+| Mac (simulator) | VM3 | 21, 40000–40010 | Upload `.tmp` → rename `.csv` | Port mở; chưa có simulator |
+
+Firewall allow/deny đã kiểm tra 17/11 ([E-UTM-06](../evidence/G2/2026-11-17_utm_source-vms.md)). NiFi cần CA/SAN phù hợp endpoint và ba identity
+admin/operator/manager theo specs. Việc còn thiếu xem [MANUAL_ACTIONS.md](MANUAL_ACTIONS.md).

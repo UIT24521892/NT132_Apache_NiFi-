@@ -1,63 +1,108 @@
 # Trạng thái triển khai và kiểm chứng
 
-Cập nhật: 10/11/2026 (UTC+07:00).
+Cập nhật: 17/11/2026 (Asia/Ho_Chi_Minh).
 
-**Kết luận hiện tại: đã có nguồn DB/API và artifact triển khai; chưa nghiệm thu qua NiFi.** Nhật ký 06/11 bên dưới ghi tiến độ VM2/VM4. Kết quả lịch sử chưa được kiểm chứng lại trong phiên Windows 07/11; thiếu inventory lab/NiFi và evidence tích hợp.
+**17/11: chuyển cả 4 VM sang UTM Shared Network trên Mac. Agent đã cài và kiểm tra qua SSH ba VM
+nguồn — db `192.168.64.102` (MySQL, verify 10/10 PASS), ftp `.103` (vsftpd, quyền reader/uploader đúng),
+api `.104` (smoke 14/14 PASS). Kali tĩnh `.101`, từ Kali đọc được cả ba nguồn (db_reader 5/5 PASS);
+ufw allow/deny đã thử; reboot cả 4 VM giữ IP/service. PG-REST và PG-JDBC đã chạy tới PutFile (bản demo đợt 1, chưa envelope/batch_id); PG-FTP chưa chạy.** Chi tiết: [evidence 17/11](../evidence/G2/2026-11-17_utm_source-vms.md).
+Phần dưới từ 11/11 trở về trước giữ làm lịch sử.
 
-Chưa có bằng chứng lỗi sudo, VM, firewall hoặc API, vì vậy không ghi các hạng mục đó là BLOCKED. Mọi test nghiệm thu NiFi hiện là NOT_RUN; kiểm thử mã nguồn/HTTP loopback được ghi riêng bên dưới. Tình trạng thiếu đầu vào/môi trường được ghi PENDING_ENVIRONMENT.
-
-Mục tiêu nghiệm thu là **NiFi lấy và biến đổi dữ liệu qua JDBC, REST và FTP**, với controller services, flow/error handling và vận hành NiFi được chứng minh. Các phần Linux/mạng chỉ phục vụ mục tiêu này; không tự thêm một đề tài hạ tầng riêng. Dữ liệu nhân sự là fixtures, còn enrichment/ghép nguồn là nâng cao khi phạm vi cho phép.
-
-## Quy ước cập nhật
-
-| Trạng thái | Ý nghĩa và điều kiện dùng |
-|---|---|
-| DONE_DOCUMENT_REVIEW | Đã thực hiện rà soát tài liệu; không chứng minh môi trường chạy được hoặc thầy đã duyệt phạm vi. |
-| PENDING_ENVIRONMENT | Chưa đủ inventory, quyền, endpoint hoặc thông tin cần thiết để bắt đầu việc tương ứng; chưa có lỗi runtime được quan sát. |
-| NOT_RUN | Chưa chạy bước/test; có thể đang chờ gate trước. |
-| IN_PROGRESS | Đã bắt đầu thực hiện; ghi rõ bước đã chạy và phần còn lại. |
-| PASS | Kiểm chứng thực tế đạt tiêu chí, có evidence và môi trường cụ thể. Chỉ dùng cho những phần đã kiểm chứng. |
-| FAIL | Đã chạy kiểm chứng và kết quả không đạt expected; lưu log/actual và hướng sửa. |
-| BLOCKED | Tác vụ không tiếp tục được do rào cản thực tế đã quan sát; ghi đủ mẫu báo trong MANUAL_ACTIONS. |
-
-Không suy ra PASS của gate sau từ PASS của gate trước. Không coi cấu hình/script đã viết, package đã tải, service đang listen hoặc ảnh màn hình đơn lẻ là bằng chứng cho toàn bộ hệ thống.
+**NiFi 2.12.0 đã chạy trên VM1 bằng JDK 21, systemd và HTTPS localhost; khung 5 PG đã
+được dựng. Kali đã kết nối FTP qua hotspot, đăng nhập/list/download CSV bằng curl thành công;
+chưa chạy processor nguồn trong NiFi. Mạng lab DB/API chưa hoàn tất.**
+Cấu hình VM xem [DEPLOYMENT_ARCHITECTURE.md](DEPLOYMENT_ARCHITECTURE.md), cấu hình flow xem
+[nifi/README.md](../nifi/README.md), việc còn thiếu xem [MANUAL_ACTIONS.md](MANUAL_ACTIONS.md).
+Bản tổng hợp để đưa vào báo cáo: [Báo cáo tiến độ ngày 11/11](BAO_CAO_TIEN_DO_2026-11-11.md).
 
 ## Các gate nghiệm thu
 
-| Gate | Phạm vi và điều kiện kết thúc | Trạng thái hiện tại | Evidence hiện có / còn thiếu |
+| Gate | Phạm vi | Trạng thái | Kết quả hiện có / phần còn thiếu |
 |---|---|---|---|
-| G0 | Rà soát plan theo phạm vi Get/Transform và định hướng quản trị mạng; nhận diện giả định, mâu thuẫn và phần thiếu. | DONE_DOCUMENT_REVIEW | Đã đọc và rà soát plan. Phản hồi giảng viên/rubric và phê duyệt phạm vi chưa có; không coi là đã xác nhận. |
-| G1 | Chốt inventory, topology, host/IP/NIC, tài nguyên, endpoint SSH, quyền quản trị; khóa phiên bản và nguồn cài phù hợp; preflight môi trường đích. | PENDING_ENVIRONMENT | Đã chọn topology 4 VM trên 3 máy vật lý, có thiết kế [DEPLOYMENT_ARCHITECTURE.md](DEPLOYMENT_ARCHITECTURE.md) và số liệu HOST-MAC (28/10/2026). Đã có thông tin HOST-WIN-A/VM2/VM4 trong nhật ký 06/11; còn thiếu HOST-WIN-B, inventory mạng/SSH lab, manifest thống nhất và preflight toàn bộ VM. |
-| G2 | NiFi và ba dịch vụ nguồn chạy bằng user/quyền phù hợp trên Linux; IP/SSH, bind address và firewall cho kết nối NiFi; API có WSGI/service; startup và health checks. | IN_PROGRESS | Nhật ký 06/11 ghi MySQL/API chạy cục bộ, có source/config trong repo. NiFi/FTP, mạng/firewall, reboot và các đường kết nối từ NiFi chưa có evidence. |
-| G3 | Ba flow NiFi JDBC, REST và FTP hoạt động với fixtures; controller services/record readers-writers cần thiết hợp lệ; chứng minh authentication, grants, passive transfer và lỗi kết nối theo specs. | NOT_RUN | Chưa có flow/controller services được xác minh hoặc input/output runtime của ba nguồn. |
-| G4 | Transform/output của ba flow đúng data contract; relationships và queue lỗi được xử lý, retry có giới hạn/đường xử lý, kiểm đếm kết quả và kiểm thử idempotency/restart đúng phạm vi. Enrichment không mặc định bắt buộc. | NOT_RUN | Chưa có flow được kiểm chứng, output, quarantine/rejected hoặc evidence chạy lại/restart. Không tuyên bố “không mất dữ liệu”. |
-| G5 | Vận hành NiFi: TLS/trust và ba identity/RBAC; provenance, bulletin/log, queue/back pressure và retention; backup–restore cấu hình/flow/state cần thiết có diễn tập; reboot rồi kiểm chứng NiFi, kết nối nguồn và dữ liệu theo kịch bản. | NOT_RUN | Chưa cấu hình/xác minh TLS, identities, policy, provenance/queue monitoring, backup, restore hay reboot. Export flow riêng lẻ không đáp ứng toàn bộ gate này. |
-| G6 | Báo cáo, slide và demo gắn với evidence thật; ghi rõ phần chưa đạt; đóng gói bàn giao và đối chiếu rubric/format/deadline đã biết. | NOT_RUN | Chưa có báo cáo/slide/demo được nghiệm thu. Chưa có rubric hoặc phản hồi giảng viên được xác nhận trong môi trường này. |
+| G0 | Rà soát plan và specs | DONE_DOCUMENT_REVIEW | Đã rà soát; ngày 11/11 người dùng báo thầy yêu cầu dashboard, chưa chốt hình thức; chưa có rubric/phê duyệt phạm vi đầy đủ |
+| G1 | Inventory, phiên bản, mạng/SSH | IN_PROGRESS | 17/11: UTM `192.168.64.0/24`, VM nguồn IP tĩnh `.102–.104`, Kali `.101`; host key/phiên bản đã ghi; SSH key cả 4 VM |
+| G2 | NiFi và ba dịch vụ nguồn | IN_PROGRESS | 17/11: MySQL/vsftpd/API cài bằng script nhóm, bind IP lab, verify trên VM và từ Kali đạt, ufw đã thử; reboot 4 VM đạt; còn TLS lab và identities |
+| G3 | Ba flow JDBC, REST, FTP | IN_PROGRESS | 17/11: PG-REST (3 ca) và PG-JDBC (45 active, đã mask) chạy tới PutFile; PG-FTP chưa chạy; flow export `nifi/flows/` ([evidence G3](../evidence/G3/2026-11-17_pg-rest-jdbc_first-run.md)) |
+| G4 | Transform/output, rejected, retry, idempotency | NOT_RUN | Chưa có kết quả tích hợp theo hợp đồng dữ liệu |
+| G5 | TLS/RBAC, Provenance, queues, restart, backup/restore | NOT_RUN | Reboot VM1 chỉ được người dùng xác nhận; chưa có bộ evidence vận hành/nghiệm thu |
+| G6 | Báo cáo, slide, demo và bàn giao | IN_PROGRESS | Đã tổng hợp báo cáo tiến độ ngày 11/11; báo cáo cuối kỳ/slide/demo chưa nghiệm thu; thiếu rubric/format/deadline và hình thức dashboard |
 
-Thứ tự phụ thuộc mặc định: G1 → G2 → G3 → G4 → hoàn tất G5 → G6. Thiết kế TLS/RBAC, users/permissions, giám sát và phục hồi bắt đầu ngay từ G1–G2; G5 là gate tổng hợp bằng chứng, không phải lý do hoãn bảo mật tới cuối. Khi các công việc độc lập đã đủ điều kiện, có thể làm song song và ghi trạng thái theo đúng thực tế.
+## Tiến độ VM1 NiFi — 09–10/11/2026
+
+Nguồn: output/ảnh Trường cung cấp, được chép lại tại
+[evidence/G2/2026-11-09_vm1_nifi-bootstrap.md](../evidence/G2/2026-11-09_vm1_nifi-bootstrap.md).
+Ảnh gốc ngày 09/11 không còn trong repo; còn ảnh PG-OUTPUT ngày 10/11.
+Agent chưa đăng nhập VM1; SSH từ phiên công cụ tới hai IP VM1 timeout ngày 09/11.
+
+| Hạng mục | Ghi nhận |
+|---|---|
+| Checksum, JDK/JRE, user `nifi` | Output được cung cấp: ZIP `OK`, JDK/JRE `21.0.13+9-1 arm64`, uid 999 / gid 981 |
+| Service, HTTPS, thư mục | Output được cung cấp: `nifi.service` enabled/active bằng JDK 21; listener localhost:8443; output/rejected `nifi:nifi`, 0750 |
+| Múi giờ | UI hiển thị `ICT` sau khi đổi từ PST |
+| Parameter Context | Ảnh cho thấy `nt132-params` gán 5 PG; đủ 13 parameters, 3 sensitive là USER_CONFIRMED |
+| Ports, 7 connections, back pressure 100 / 10 MB, expiration 0 | USER_CONFIRMED; chưa có ảnh canvas gốc hoặc flow export |
+| PutFile | Có ảnh trong PG-OUTPUT, đang có cảnh báo chưa rõ nguyên nhân; smoke test và chạy lại vẫn 1 file (`ignore`) là USER_CONFIRMED |
+| Đăng nhập UI, tự khởi động sau reboot | Đăng nhập UI: USER_CONFIRMED. Tự khởi động: 17/11 agent reboot qua SSH, `nifi` active, 8443 lên (E-UTM-07) |
+
+Còn mở: sửa tên `PD-JDBC` → `PG-JDBC`, xem nguyên nhân cảnh báo PutFile, export flow,
+thêm Controller Services/driver, đối chiếu host key và hoàn tất mạng/TLS/RBAC.
+
+## Tiến độ mạng lab và FTP — 11/11/2026
+
+Nguồn: ảnh/output người dùng gửi trong chat; bản chép lại tại
+[evidence hotspot/FTP](../evidence/G2/2026-11-11_hotspot_ftp-connectivity.md).
+Ảnh gốc chưa được lưu trong repo. Agent chỉ trực tiếp đọc IP Mac, chưa đăng nhập các VM.
+
+| Hạng mục | Kết quả hiện có | Chưa kiểm chứng |
+|---|---|---|
+| Mạng hotspot | Mac `172.20.10.9/28`, Kali `172.20.10.10/28`, FTP `172.20.10.13/28`; gateway Kali `172.20.10.1`; UTM bridge Wi-Fi en0 | IP tĩnh, tất cả cặp máy, reconnect/reboot, firewall allow/deny |
+| SSH và UI | Mac → Kali SSH được người dùng xác nhận; chọn dùng NiFi trực tiếp trong Kali | Host key; truy cập NiFi từ Mac qua tunnel chưa xác nhận thành công |
+| Sự cố IP | Có lúc Kali nhận `172.30.239.242/16`, FTP báo No route to host; ảnh sau trở lại `172.20.10.10/28`, FTP thông | Chưa xác định nguyên nhân cấp IP 172.30.x.x |
+| VM FTP | vsftpd active; xác nhận tên `clock_uploader`, `nifi_fetch` và remote path `/checkin` | Dải passive, firewall, quyền reader ghi/rename/delete bị từ chối |
+| Kali → FTP | TCP 21 open, reader đăng nhập/list `/` và `/checkin/`, tải CSV 368 byte bằng curl passive | Chưa chạy ListFTP/FetchFTP hoặc cập nhật parameters trong NiFi |
+| CSV tải về | `/tmp/nt132-ftp-check.csv`; header employee_id,timestamp,device_id; `wc -l` = 11 | Chưa parse toàn file, normalize hoặc đối chiếu 7 accepted / 1 duplicate / 2 rejected |
+| VM DB Trung | Ảnh mới: enp0s3 DOWN, enp0s8 `10.0.3.15/24`, gateway `10.0.3.2` | Chưa nhận IP hotspot; bridge/DHCP, bind/grants/firewall và JDBC |
+| VM API Trung | Chưa có IP lab mới | Kết nối qua hotspot và InvokeHTTP |
+| Dashboard | Người dùng báo thầy yêu cầu; đã trao đổi phương án NiFi UI hoặc dashboard riêng | Chưa chốt hình thức/chỉ tiêu, chưa triển khai riêng |
+
+IP hotspot là giá trị đã quan sát, có thể đổi theo DHCP. Kết quả curl là kiểm tra thành phần
+hỗ trợ TC-03/TC-14, không phải PASS của flow NiFi hoặc toàn bộ hai TC này.
+
+## Tiến độ VM nguồn theo báo cáo thành viên — nhận 09/11/2026
+
+Agent chưa truy cập VM nguồn. Bảng dưới giữ báo cáo ngày 09/11; kết quả FTP và ảnh mạng DB
+ngày 11/11 được bổ sung ở mục trên, không thay thế kiểm tra triển khai MySQL/API.
+
+| Người / VM | Đã báo hoàn thành | Còn thiếu |
+|---|---|---|
+| Trung / VM2 DB | MySQL 8.0.46 autostart, `hr_db` seed 50/45/5 và 5 phòng ban | SQL verify, tạo grant theo IP VM1, bind/firewall mạng lab |
+| Trung / VM4 API | Python 3.12.3, Gunicorn 23.0.0, service riêng; API key, 3 ca, endpoint lỗi/chậm; báo 33 test hợp đồng/loopback đạt | Bản sửa/test chưa push và chưa áp dụng vào service; bind/firewall mạng lab |
+| Phước / VM3 FTP | vsftpd, uploader/reader, inbox, truyền passive; thử `.tmp` → `.csv` cục bộ | Xác nhận account/path/passive, thử reader không rename/delete, bật firewall; cấu hình/simulator/fixture chưa có trong repo |
+
+Nhánh `origin/trung/db-api` được kiểm tra ngày 09/11 ở commit `17533fa` (06/11), có
+`sql/`, `api/`, `infra/db/zz-nt132.cnf`, `tests/test_api_contract.py`. Đã merge vào `main` qua PR #1
+(`4eacec3`) và được dùng để cài VM db/api trên UTM ngày 17/11.
+Bộ 33 test do Trung báo không thay thế kiểm thử từ NiFi. Bàn giao cụ thể tại
+[MA-07](MANUAL_ACTIONS.md#ma-07--đưa-artifact-vm-nguồn-vào-repo-và-hoàn-tất-kiểm-tra-cục-bộ).
 
 ## Trạng thái bộ test
 
-- Bộ nghiệm thu baseline: **TC-01 đến TC-30**, định nghĩa tại [SPECS.md, mục 8](../SPECS.md#8-nghiệm-thu-và-evidence).
-- Trạng thái hiện tại của toàn bộ dải: **NOT_RUN**; chưa có test runtime PASS/FAIL.
-- Dùng bảng test trong specs làm nguồn thống nhất về mô tả/kỳ vọng; nếu thay đổi mapping, cập nhật specs và evidence cùng lúc.
-- Khi thực hiện, ghi kết quả theo từng ID, không chỉ ghi “tất cả ổn”. Bước bị bỏ qua hoặc thiếu môi trường phải giữ NOT_RUN/PENDING_ENVIRONMENT và nêu lý do.
+**TC-01..TC-30 đều NOT_RUN**, định nghĩa tại [SPECS mục 8](../SPECS.md#8-nghiệm-thu-và-evidence).
+Các kết quả bootstrap, xác nhận thành viên và curl FTP thành công chưa đủ để đánh PASS một
+TC tích hợp; các phần đã kiểm tra được ghi riêng trong evidence ngày 11/11.
 
-Mẫu kết quả thực thi cho từng test:
+`USER_CONFIRMED` nghĩa là người dùng xác nhận nhưng chưa có evidence đầy đủ.
+`PASS`/`FAIL` chỉ dùng khi đã chạy kiểm chứng có expected/actual và evidence cụ thể.
+`PENDING_ENVIRONMENT` dùng khi thiếu đầu vào; `BLOCKED` cần có rào cản đã quan sát.
 
-```text
-Test ID / tên theo specs:
-Spec version / commit (nếu có):
-Timestamp / timezone:
-Environment / host / phiên bản dịch vụ:
-Prerequisites:
-Command / thao tác đã thực hiện:
-Expected:
-Actual / exit code:
-Evidence path: log, kết quả dữ liệu hoặc ảnh đã che secrets
-Status: NOT_RUN | PENDING_ENVIRONMENT | PASS | FAIL | BLOCKED
-Remaining action / limitation:
-```
+Khi chạy test, ghi: ID, thời điểm/timezone, VM/phiên bản, bước/lệnh, expected,
+actual/exit code, đường dẫn evidence đã che secrets và việc còn lại.
+
+## Lịch sử DB/API trên VirtualBox (Trung) — 06–10/11/2026
+
+Các mục dưới đây giữ nguyên nhật ký của Trung khi VM2/VM4 còn chạy VirtualBox trên HOST-WIN-A.
+Từ 17/11 VM db/api chạy trên UTM của Mac và được cài lại bằng chính `sql/` và `api/deploy/` này
+(xem đầu file); các điều kiện SSH/sudo/mạng ghi bên dưới không còn áp dụng.
 
 ## Tiến độ VM2/VM4 trên HOST-WIN-A (Trung) — 06/11/2026
 
@@ -74,33 +119,7 @@ Artifact mới: `sql/`, `infra/db/zz-nt132.cnf`, `api/` (app, lock, systemd unit
 `tests/test_api_contract.py` (18 test hợp đồng bằng Flask test client — không phải test tích hợp).
 Evidence ảnh do Trung giữ, sẽ đưa vào `evidence/` sau khi che secrets.
 
-## Đầu vào cần bổ sung và bước tiếp theo
-
-| Mục | Trạng thái | Việc tiếp theo |
-|---|---|---|
-| VM, NIC, CPU/RAM/disk và topology thực tế | PENDING_ENVIRONMENT | Topology đã chọn: 4 VM trên HOST-MAC + 2 máy Windows, LAN riêng, NIC bridged. Thu thập cấu hình 2 máy Windows và thiết bị mạng theo [MA-01](MANUAL_ACTIONS.md#ma-01--máy-ảo-và-card-mạng). |
-| IP/hostname, SSH, host key và sudo | PENDING_ENVIRONMENT | Hoàn thiện inventory, chạy preflight theo [MA-02](MANUAL_ACTIONS.md#ma-02--ip-ssh-và-quyền-quản-trị-linux). |
-| Nơi nạp secrets và identities lab | PENDING_ENVIRONMENT | Chuẩn bị cấu hình placeholder, cơ chế sinh/nạp secrets và quyền theo [MA-03](MANUAL_ACTIONS.md#ma-03--credentials-và-danh-tính-nội-bộ). |
-| Trust CA/client certificate browser | NOT_RUN | Thực hiện sau khi endpoint TLS và phương án identity có thật; xem [MA-04](MANUAL_ACTIONS.md#ma-04--trust-ca-và-chứng-chỉ-client-trên-trình-duyệt). |
-| Rubric, phản hồi phạm vi, hình thức nộp và deadline | PENDING_ENVIRONMENT | Người dùng cung cấp thông tin; ghi nguồn xác nhận theo [MA-05](MANUAL_ACTIONS.md#ma-05--rubric-phạm-vi-và-yêu-cầu-nộp-của-giảng-viên). |
-| Evidence GUI/demo | NOT_RUN | Chuẩn bị script/kịch bản, thu evidence thật khi môi trường sẵn sàng theo [MA-06](MANUAL_ACTIONS.md#ma-06--evidence-gui-và-demo-trực-tiếp). |
-
-Các artifact chưa được liệt kê là đã có trong đợt DB/API vẫn mang trạng thái PLANNED. Artifact đã viết không đồng nghĩa đã áp dụng lên VM. MA-05 dẫn các tài liệu giả định/câu hỏi đã có, chưa có phản hồi thầy. Claude tiếp tục chuẩn bị code, fixtures, cấu hình, provision/verify scripts và runbook trong repo khi chưa có runtime, đồng thời ghi rõ từng artifact mới tạo. Không dùng tiến độ tài liệu để thay thế kết quả kiểm thử thực tế.
-
-## Kiểm tra tài liệu đã thực hiện
-
-Đã đối chiếu chéo phạm vi/thiết kế NiFi và các file bàn giao. Kiểm tra tự động trên bộ tài liệu
-xác nhận code fences cân bằng, liên kết nội bộ/anchors hợp lệ, JSON mẫu parse được, hai hash
-golden đúng, TC-01..TC-30 không thiếu/trùng và CLAUDE.md import agent.md. Đây là kiểm tra
-tài liệu, không phải kết quả PASS của bất kỳ test runtime nào.
-
-## Nhật ký rào cản thực tế
-
-**Điều kiện môi trường 07/11 (sau khi bật VM):** TCP 2222/2223 đã mở, user trung; SSH exit 255 do chưa có khóa cục bộ được cấp. Chưa xác minh sudo/dịch vụ và chưa có endpoint NiFi. Giữ PENDING_ENVIRONMENT, không suy đoán lỗi firewall/sudo.
-
-Khi một bước thực sự không chạy được, phải báo ngay trong chat và thêm một mục gồm task/gate/test, nguyên nhân quan sát được, prerequisite thiếu, artifact hiện có hoặc PLANNED, thao tác người dùng tối thiểu, cách kiểm chứng lại, ảnh hưởng và trạng thái. Dùng mẫu đầy đủ tại [MANUAL_ACTIONS.md](MANUAL_ACTIONS.md#quy-tắc-báo-phần-chưa-thực-hiện-được), rồi tiếp tục các việc độc lập. Khi điều kiện đã được bổ sung, chạy lại bước kiểm chứng trước khi đổi trạng thái.
-
-## Hoàn thiện artifact DB/API — 07/11/2026
+### Hoàn thiện artifact DB/API — 07/11/2026
 
 - Sửa checker API: status + JSON đầy đủ, không echo key/body, trả exit lỗi, đo endpoint chậm,
   xác minh endpoint lab bật/tắt. Bash wrapper gọi helper Python stdlib.
@@ -115,7 +134,7 @@ TC tích hợp vẫn NOT_RUN; không suy ra PASS của TC từ pytest hay HTTP l
 TCP 127.0.0.1:2222 và :2223 đã mở sau khi người dùng bật VM; SSH trung bị từ chối publickey/password. Chờ cấp public key bằng scripts/authorize_lab_ssh.ps1; endpoint NiFi chưa được cung cấp.
 Xem bàn giao DB/API tại [MANUAL_ACTIONS.md](MANUAL_ACTIONS.md).
 
-## Truy cập VM sau khi bật — 07/11/2026
+### Truy cập VM sau khi bật — 07/11/2026
 
 - Người dùng xác nhận hai VM đã bật, username đều trung.
 - TCP 127.0.0.1:2222/2223 reachable=true.
@@ -124,7 +143,7 @@ Xem bàn giao DB/API tại [MANUAL_ACTIONS.md](MANUAL_ACTIONS.md).
 - Chuẩn bị khóa riêng cho lab ngoài repo và scripts/authorize_lab_ssh.ps1; người dùng nhập mật khẩu tại terminal cục bộ để cấp public key.
 - Chưa copy/apply bản sửa lên VM, chưa xác minh hostname/sudo/MySQL/Gunicorn. G1 PENDING_ENVIRONMENT; TC không đổi.
 
-## Kiểm chứng lại và chuẩn bị triển khai — 10/11/2026
+### Kiểm chứng lại và chuẩn bị triển khai — 10/11/2026
 
 - Nhánh đúng: `trung/db-api`; GitHub trước khi cập nhật ở `17533fa`.
 - **33 pytest passed**, exit 0, HTTP loopback thật; sáu script Bash qua kiểm tra cú pháp.
