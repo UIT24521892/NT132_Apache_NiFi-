@@ -1,0 +1,3 @@
+# Cài trong venv kiểm thử, không thêm pytest vào service VM4.
+-r requirements.lock
+pytest==8.3.5

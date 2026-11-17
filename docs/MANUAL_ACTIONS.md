@@ -92,17 +92,14 @@ Chỉ bàn giao thao tác GUI khi công cụ không thực hiện được; khô
 
 ## MA-07 — Đưa artifact VM nguồn vào repo và hoàn tất kiểm tra cục bộ
 
-**IN_PROGRESS — G2–G3.** Theo báo cáo 09/11, bản sửa DB/API chưa push/áp dụng đầy đủ;
-FTP chưa có artifact trong repo.
+**IN_PROGRESS — G2–G3 (cập nhật 17/11).** DB/API đã merge vào `main` (PR #1, `4eacec3`) và đã cài,
+kiểm tra trên VM UTM (verify_source 10/0, verify_reader 5/0, smoke 14/0). FTP: `vsftpd.conf` và
+`setup_vm3.sh` đã có trong `infra/ftp/` và đã dùng để cài VM ftp; quyền reader đã kiểm tra.
 
-| Người / VM | Việc còn lại | Cách kiểm chứng |
+| Người | Việc còn lại | Cách kiểm chứng |
 |---|---|---|
-| Trung / VM2, VM4 | Push bản sửa vào nhánh `trung/db-api`; áp dụng API bằng installer trong VM có sudo, chạy lại smoke test; bổ sung SQL verify | Trên nhánh nguồn: `sudo mysql < sql/99_verify.sql` cho 50/45/5, 5 phòng ban; `systemctl status nt132-api`, `curl -s http://127.0.0.1:5000/health` |
-| Phước / VM3 | Đã xác nhận account, `/checkin` và reader list/download từ Kali; còn đưa `vsftpd.conf`, script user/thư mục, simulator và fixture vào repo, xác nhận passive 40000–40010 | Kiểm tra reader ghi/rename/delete bị từ chối; upload `.tmp` → `.csv` từ Windows và chứng minh NiFi không lấy `.tmp`, lưu evidence đã che secrets |
-
-Các lệnh của nhánh DB/API cần checkout đúng nhánh trên VM; các file đó chưa có trong checkout
-hiện tại. Với DB/API chưa đổi bind/firewall trước khi có IP lab (MA-01).
-Với FTP đã có IP, đối chiếu cấu hình passive/firewall và hoàn thiện kiểm tra quyền reader.
+| Trung | Không còn việc chờ cho nguồn; review PG-JDBC/PG-REST trên NiFi | Chạy lại flow, đối chiếu 45 record đã mask và 3 ca |
+| Phước | Simulator upload `.tmp` → rename `.csv` (user `clock_uploader`, không ghi mật khẩu vào code); xác nhận fixture CSV và bảng kết quả mong đợi | Chạy simulator vào `ftp.lab`, NiFi không lấy `.tmp`; kết quả khớp bảng mong đợi |
 
 ## Quy tắc báo phần chưa thực hiện được
 
@@ -110,3 +107,67 @@ Nếu một bước cần thiết chưa thực hiện được, báo trong chat 
 task/gate/test, nguyên nhân quan sát, prerequisite thiếu, artifact hiện có, thao tác tối thiểu
 trên đúng VM, cách verify, ảnh hưởng và evidence. Dùng PENDING_ENVIRONMENT/NOT_RUN khi chưa thử;
 chỉ dùng BLOCKED khi đã quan sát rào cản. Khi đủ điều kiện, kiểm chứng lại trước khi đóng mục.
+
+## Lịch sử bàn giao DB/API trên VirtualBox (Trung) — đã đóng 17/11/2026
+
+Giữ nguyên văn để tham chiếu. Các mục này thuộc bố trí VirtualBox/HOST-WIN-A cũ; từ 17/11 VM db/api
+trên UTM đã được cài bằng installer/verify script dưới đây (verify_source 10/0, verify_reader 5/0,
+smoke API 14/0) nên không còn việc chờ.
+
+### Bàn giao DB/API — 07/11/2026
+
+- **Task/gate/test:** kiểm chứng nguồn VM2/VM4 và PG-JDBC/PG-REST; G1/G2/G3, TC-03..TC-13, TC-27.
+- **Observed cause:** hai endpoint SSH lịch sử 127.0.0.1:2222/2223 không kết nối được khi kiểm tra TCP;
+  chưa có endpoint NiFi và inventory mạng lab. Không kết luận lỗi sudo/firewall.
+- **Prerequisite:** VM2/VM4 đang chạy, endpoint/user/host key được xác minh; SSH và quyền đúng VM;
+  key/mật khẩu nạp cục bộ, IP lab VM1/VM2/VM4 thật.
+- **Artifact đã chuẩn bị:** api/deploy/install.sh, smoke_test.sh + smoke_test.py,
+  sql/99_verify.sql, verify_source.sh, verify_reader.sh; tests và docs/DB_API_RUNBOOK.md.
+  Áp dụng bản sửa lên VM và kiểm thử MySQL/systemd vẫn NOT_RUN.
+- **Manual steps tối thiểu:** bật đúng VM2/VM4 hoặc xác nhận endpoint mới trên HOST-WIN-A;
+  xác minh SSH/host key và cấp quyền/secret cục bộ. Không gửi private key/password vào chat.
+  Khi có kết nối, agent tiếp tục tự triển khai/verify bằng artifact đã chuẩn bị.
+- **Verify:** theo DB_API_RUNBOOK.md; verify_source 10/0 (11/0 khi chủ động replay seed),
+  verify_reader 5/0; API smoke lab bật 14/0, lab tắt 10/0. Sau đó chạy TC trong NiFi và reboot VM;
+  lưu log/ảnh có timestamp, exit code, không chứa secret.
+- **Effect/status:** PENDING_ENVIRONMENT cho triển khai VM/NiFi; artifact/test cục bộ tiếp tục độc lập.
+- **Evidence:** chưa có evidence VM/NiFi cho bản sửa; test cục bộ có 33 pytest passed và evidence tại evidence/local-db-api-2026-11-07.md. Kết quả này không đóng các TC tích hợp.
+
+### Cấp public key SSH cho VM2/VM4 — 07/11/2026
+
+- **Task/gate/test:** truy cập VM2/VM4 để triển khai, G1/G2; TC-01/03/05/10..13/27 còn chờ.
+- **Observed cause:** TCP 2222/2223 đã mở; user trung; SSH dùng host key cục bộ tin cậy
+  nhưng exit 255 Permission denied (publickey,password). Windows không có key/agent để xác thực.
+- **Prerequisite:** người dùng nhập mật khẩu Ubuntu một lần tại SSH trong PowerShell của mình,
+  hoặc cấp public key qua console; không gửi password/private key vào chat.
+- **Artifact:** khóa nt132_lab_ed25519 ngoài repo trong .ssh của ADMIN; scripts/authorize_lab_ssh.ps1
+  chỉ gửi file .pub lên authorized_keys của trung, giữ key cũ và không thêm trùng.
+- **Manual step:** từ root repo trên Windows chạy
+  powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\authorize_lab_ssh.ps1,
+  nhập mật khẩu trung cho từng cổng 2222/2223 tại prompt, rồi báo đã xong.
+- **Verify:** agent SSH BatchMode với khóa lab, kiểm tra hostname, id, sudo -n true.
+  Nếu sudo cần mật khẩu tương tác, chỉ bàn giao bước sudo cụ thể sau khi xác minh quyền.
+- **Effect/status:** PENDING_ENVIRONMENT cho xác thực; bản sửa chưa áp dụng lên VM,
+  33 test cục bộ vẫn là evidence riêng, không đổi TC thành PASS.
+
+### Sudo triển khai DB/API — 10/11/2026
+
+- **Task/gate/test:** cập nhật nguồn API VM4, kiểm tra baseline/TLS MySQL VM2; G2.
+- **Observed cause:** SSH bằng khóa lab đã thành công vào `db`/`api` qua
+  `127.0.0.1:2222/2223`, user `trung`; `sudo -n true` cả hai trả `sudo: a password is required`.
+  Điều kiện cấp public key 07/11 đã giải quyết, không cần chạy lại authorize script.
+- **Prerequisite:** người dùng nhập mật khẩu sudo Ubuntu trực tiếp tại terminal SSH cục bộ.
+  Không gửi mật khẩu/private key/API key vào chat hoặc đưa vào file evidence.
+- **Artifact:** `scripts/verify_lab_vms.ps1` chạy đúng hai script được copy vào thư mục
+  `/home/trung/nt132-verify-<run-id>`; `.tools/vm-current-run.json` giữ đường dẫn run hiện tại ngoài Git.
+  Script DB mặc định chỉ đọc, in 10 baseline checks, tổng 50/45/5, 5 phòng ban, timezone và `have_ssl`.
+  Script API backup source/unit, giữ nguyên env/key/bind, chạy installer rồi smoke test.
+- **Manual step:** sau khi agent chuẩn bị run, chạy
+  `powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\verify_lab_vms.ps1`
+  từ root repo (hoặc dùng terminal agent mở), nhập mật khẩu tại từng prompt sudo.
+- **Verify:** agent lấy `evidence/vm-db.log` và `vm-api.log` từ từng VM;
+  mong đợi DB 10/0, 50/45/5, 5 phòng ban, timezone `+00:00`, TLS `YES`,
+  API env unchanged, service active/enabled và smoke 14/0 khi lab bật, `RUN_EXIT=0`.
+  Nếu TLS `DISABLED`, ghi rõ để Trường chốt tham số NiFi; không tự đổi TLS.
+- **Effect/status:** PENDING_ENVIRONMENT cho sudo; commit/push và test cục bộ tiếp tục được.
+  Chưa có kết quả DB/API runtime cho bản sửa; TC NiFi vẫn NOT_RUN.

@@ -90,7 +90,7 @@ state/repositories cần bảo toàn queue, output/rejected và secrets lưu ri�
 
 Chung cho ba VM: ufw deny incoming, SSH 22 từ `192.168.64.0/24`; netplan `/etc/netplan/60-nt132-static.yaml` (gateway/DNS `192.168.64.1`),
 cloud-init network disabled; `/etc/hosts` có khối `nt132-lab` cho `nifi/db/ftp/api.lab`.
-Mã nguồn chép vào `~/nt132` (DB/API từ `origin/trung/db-api` @ `4eacec3`, FTP từ `infra/ftp/`).
+Mã nguồn chép vào `~/nt132` (DB/API từ `sql/`, `api/`, `infra/db/` — commit `4eacec3`, đã merge vào `main`, FTP từ `infra/ftp/`).
 Secrets sinh trên VM, nằm trong `/root/nt132-secrets/` (0700); không đưa vào Git/chat.
 
 | VM | Cấu hình | Chưa làm |

@@ -45,3 +45,7 @@ venv/
 .DS_Store
 .vscode/
 .idea/
+
+# Công cụ và cache kiểm thử cục bộ
+.tools/
+.pytest_cache/

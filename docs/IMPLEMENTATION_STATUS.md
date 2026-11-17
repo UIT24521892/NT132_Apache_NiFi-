@@ -80,7 +80,8 @@ ngày 11/11 được bổ sung ở mục trên, không thay thế kiểm tra tri
 | Phước / VM3 FTP | vsftpd, uploader/reader, inbox, truyền passive; thử `.tmp` → `.csv` cục bộ | Xác nhận account/path/passive, thử reader không rename/delete, bật firewall; cấu hình/simulator/fixture chưa có trong repo |
 
 Nhánh `origin/trung/db-api` được kiểm tra ngày 09/11 ở commit `17533fa` (06/11), có
-`sql/`, `api/`, `infra/db/zz-nt132.cnf`, `tests/test_api_contract.py`; chưa merge vào checkout này.
+`sql/`, `api/`, `infra/db/zz-nt132.cnf`, `tests/test_api_contract.py`. Đã merge vào `main` qua PR #1
+(`4eacec3`) và được dùng để cài VM db/api trên UTM ngày 17/11.
 Bộ 33 test do Trung báo không thay thế kiểm thử từ NiFi. Bàn giao cụ thể tại
 [MA-07](MANUAL_ACTIONS.md#ma-07--đưa-artifact-vm-nguồn-vào-repo-và-hoàn-tất-kiểm-tra-cục-bộ).
 
@@ -96,3 +97,63 @@ TC tích hợp; các phần đã kiểm tra được ghi riêng trong evidence n
 
 Khi chạy test, ghi: ID, thời điểm/timezone, VM/phiên bản, bước/lệnh, expected,
 actual/exit code, đường dẫn evidence đã che secrets và việc còn lại.
+
+## Lịch sử DB/API trên VirtualBox (Trung) — 06–10/11/2026
+
+Các mục dưới đây giữ nguyên nhật ký của Trung khi VM2/VM4 còn chạy VirtualBox trên HOST-WIN-A.
+Từ 17/11 VM db/api chạy trên UTM của Mac và được cài lại bằng chính `sql/` và `api/deploy/` này
+(xem đầu file); các điều kiện SSH/sudo/mạng ghi bên dưới không còn áp dụng.
+
+## Tiến độ VM2/VM4 trên HOST-WIN-A (Trung) — 06/11/2026
+
+Trạng thái gate không đổi (G1 PENDING_ENVIRONMENT, G2 NOT_RUN) vì chưa có mạng lab, IP tĩnh,
+firewall và kết nối từ VM1. Các kiểm tra dưới đây chỉ chạy **cục bộ trong từng VM**, không thay cho TC-03/TC-05.
+
+| Hạng mục | Đã làm | Còn thiếu |
+|---|---|---|
+| HOST-WIN-A | Windows 11 Home, i9-12900H 20 luồng, RAM 15,7 GiB, ổ D trống 58 GiB, VirtualBox 7.2.20 (đang chạy trên nền Hyper-V/VBS), Wi-Fi Killer AX1650i | IP host trên hotspot |
+| VM2 `db` | Ubuntu 24.04.4 amd64, 1 vCPU/2 GiB/25 GiB, NIC1 bridged (Wi-Fi, DHCP thất bại như dự kiến), NIC2 NAT cho apt + SSH `127.0.0.1:2222`. MySQL 8.0.46-0ubuntu0.24.04.4, enabled/active, nghe 127.0.0.1:3306, TZ hệ thống Asia/Ho_Chi_Minh, mysqld `+00:00`. Đã nạp `sql/01_schema.sql` + `02_seed.sql`; `99_verify.sql` ra 50/45/5, 5 phòng ban | IP tĩnh lab, `bind-address`, user `db_reader` (template đã có, đã thử trên MySQL 8.0 khác), UFW, user SSH thành viên, TC-05 từ VM1 |
+| VM4 `api` | Ubuntu 24.04.4 amd64, 1 vCPU/1 GiB/25 GiB, NIC như VM2 (SSH `127.0.0.1:2223`). Python 3.12.3; `api/deploy/install.sh` cài `nt132-api.service` (user `nifi-source-api`, enabled/active, Gunicorn 23.0.0 nghe 127.0.0.1:5000); `api/deploy/smoke_test.sh` 8 PASS / 0 FAIL | Bind IP lab, UFW, user SSH thành viên, TC-10..TC-13 từ NiFi |
+
+Artifact mới: `sql/`, `infra/db/zz-nt132.cnf`, `api/` (app, lock, systemd unit, install/smoke scripts, `.env.example`),
+`tests/test_api_contract.py` (18 test hợp đồng bằng Flask test client — không phải test tích hợp).
+Evidence ảnh do Trung giữ, sẽ đưa vào `evidence/` sau khi che secrets.
+
+### Hoàn thiện artifact DB/API — 07/11/2026
+
+- Sửa checker API: status + JSON đầy đủ, không echo key/body, trả exit lỗi, đo endpoint chậm,
+  xác minh endpoint lab bật/tắt. Bash wrapper gọi helper Python stdlib.
+- Installer chỉ thành công khi systemd active và health đúng; giữ nguyên key cũ.
+- Bổ sung test snapshot không trùng/đúng kiểu, key, cấu hình lab, fixture reload và hồi quy checker.
+- DB có verify_source (10 checks; seed replay tùy chọn) và verify_reader (SELECT được,
+  ghi/sensitive column bị từ chối). Script DB chưa chạy với MySQL thật trong phiên này.
+- Runbook: [DB_API_RUNBOOK.md](DB_API_RUNBOOK.md).
+
+Kết quả kiểm thử đợt này: **33 pytest passed**, Python 3.12.16 trên Windows 11; có HTTP loopback thật với lab bật/tắt và phép đo endpoint chậm. Bốn script Bash qua kiểm tra cú pháp. CLI checker trả 1 khi nguồn offline và 2 khi cấu hình sai. Evidence: [local-db-api-2026-11-07.md](../evidence/local-db-api-2026-11-07.md), kèm JUnit XML. Đây không phải test MySQL/Gunicorn/systemd hay NiFi.
+TC tích hợp vẫn NOT_RUN; không suy ra PASS của TC từ pytest hay HTTP loopback.
+TCP 127.0.0.1:2222 và :2223 đã mở sau khi người dùng bật VM; SSH trung bị từ chối publickey/password. Chờ cấp public key bằng scripts/authorize_lab_ssh.ps1; endpoint NiFi chưa được cung cấp.
+Xem bàn giao DB/API tại [MANUAL_ACTIONS.md](MANUAL_ACTIONS.md).
+
+### Truy cập VM sau khi bật — 07/11/2026
+
+- Người dùng xác nhận hai VM đã bật, username đều trung.
+- TCP 127.0.0.1:2222/2223 reachable=true.
+- SSH BatchMode=yes, StrictHostKeyChecking=yes trả Permission denied (publickey,password), exit 255 ở cả hai VM.
+- Profile Windows ADMIN chỉ có known_hosts/known_hosts.old; không có identity mặc định và không có SSH agent.
+- Chuẩn bị khóa riêng cho lab ngoài repo và scripts/authorize_lab_ssh.ps1; người dùng nhập mật khẩu tại terminal cục bộ để cấp public key.
+- Chưa copy/apply bản sửa lên VM, chưa xác minh hostname/sudo/MySQL/Gunicorn. G1 PENDING_ENVIRONMENT; TC không đổi.
+
+### Kiểm chứng lại và chuẩn bị triển khai — 10/11/2026
+
+- Nhánh đúng: `trung/db-api`; GitHub trước khi cập nhật ở `17533fa`.
+- **33 pytest passed**, exit 0, HTTP loopback thật; sáu script Bash qua kiểm tra cú pháp.
+  Evidence: [local-db-api-2026-11-10.md](../evidence/local-db-api-2026-11-10.md).
+- Hai VM ban đầu `poweroff`; đã bật đúng `db`/`api` bằng VirtualBox headless.
+- SSH với khóa lab đã thành công vào cả hai hostname, user `trung`, thành viên nhóm `sudo`.
+  Điều kiện cấp SSH key ngày 07/11 đã được giải quyết.
+- `sudo -n true` ở cả hai VM yêu cầu mật khẩu. Cập nhật API/MySQL/TLS vẫn **NOT_RUN**,
+  chờ nhập mật khẩu trực tiếp tại terminal cục bộ; không ghi mật khẩu/API key vào log/chat.
+- `scripts/check_db_vm.sh` mặc định chỉ đọc baseline và TLS (`have_ssl`); `--extended` mới
+  chạy seed replay và tạo/xóa reader tạm. `scripts/check_api_vm.sh` backup source/unit,
+  chạy installer và smoke test, đối chiếu env giữ nguyên.
+- Chưa có endpoint NiFi hoặc mạng hotspot. G1/G2 và các TC tích hợp chưa được đóng.
