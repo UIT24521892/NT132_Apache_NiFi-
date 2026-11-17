@@ -9,14 +9,15 @@ minh họa; sản phẩm chính là các flow NiFi, không phải ứng dụng q
 
 ## Trạng thái hiện tại
 
-> **Giai đoạn tài liệu.** Repo hiện chỉ có kế hoạch, đặc tả và tài liệu trạng thái. Chưa có mã
-> nguồn, cấu hình triển khai, flow NiFi export hay kết quả kiểm thử runtime.
+> **Đã có nguồn DB/API và công cụ kiểm thử.** Repo có schema/seed MySQL, API Flask,
+> cấu hình Gunicorn/systemd và script kiểm chứng. Nhật ký 06/11 ghi VM2/VM4 đã chạy cục bộ;
+> chưa có flow NiFi export hay evidence nghiệm thu JDBC/REST/FTP đầy đủ.
 
 | Gate | Nội dung | Trạng thái |
 |---|---|---|
 | G0 | Rà soát plan, phạm vi và giả định | DONE_DOCUMENT_REVIEW |
 | G1 | Inventory, topology, version manifest, preflight | PENDING_ENVIRONMENT |
-| G2 | Dựng NiFi và ba dịch vụ nguồn, mạng/firewall, autostart | NOT_RUN |
+| G2 | Dựng NiFi và ba dịch vụ nguồn, mạng/firewall, autostart | IN_PROGRESS |
 | G3 | Ba flow PG-JDBC, PG-REST, PG-FTP chạy trong NiFi thật | NOT_RUN |
 | G4 | Transform/output đúng hợp đồng, rejected, retry, idempotency | NOT_RUN |
 | G5 | TLS/RBAC, Provenance, back pressure, restart, backup/restore | NOT_RUN |
@@ -83,9 +84,10 @@ DB/FTP/API vào một VM. Địa chỉ IP trong tài liệu chỉ là ví dụ, 
 
 Thứ tự ưu tiên khi có mâu thuẫn: yêu cầu/rubric của giảng viên → `SPECS.md` → plan.
 
-## Cấu trúc thư mục dự kiến
+## Cấu trúc thư mục
 
-Các thư mục dưới đây **chưa tồn tại**; sẽ được tạo khi có nội dung thật.
+Đã có: `api/`, `sql/`, `tests/`, `infra/db/`, `docs/`. Các mục còn lại là dự kiến,
+chỉ tạo khi có nội dung thật.
 
 | Thư mục | Nội dung dự kiến |
 |---|---|
@@ -98,6 +100,11 @@ Các thư mục dưới đây **chưa tồn tại**; sẽ được tạo khi có
 | `scripts/` | Preflight, kiểm thử kết nối, đối chiếu kết quả, backup/restore |
 | `tests/` | Kiểm thử hợp đồng API, transform và nghiệm thu |
 | `evidence/` | Log/kết quả kiểm thử đã che secrets |
+
+## Kiểm chứng DB/API
+
+Lệnh cài đặt, smoke test, kiểm tra seed/quyền và các phần còn chờ NiFi nằm trong
+[docs/DB_API_RUNBOOK.md](docs/DB_API_RUNBOOK.md). Test cục bộ không thay TC-01..TC-30.
 
 ## Nguyên tắc
 

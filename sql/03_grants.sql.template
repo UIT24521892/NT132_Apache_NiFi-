@@ -1,0 +1,10 @@
+-- Tài khoản nguồn cho NiFi (SPECS 4.3/5.2, TC-05). TEMPLATE: không commit mật khẩu thật.
+-- Thay <IP_VM1> và <DB_READER_PASSWORD> trên VM2 rồi chạy: sudo mysql < 03_grants.sql
+-- Quyền SELECT theo cột: NiFi không đọc được dob/gender/phone/base_salary/hire_date/position.
+CREATE USER IF NOT EXISTS 'db_reader'@'<IP_VM1>' IDENTIFIED BY '<DB_READER_PASSWORD>';
+GRANT SELECT (employee_id, full_name, email, department_id, shift_id, status, updated_at)
+  ON hr_db.employees TO 'db_reader'@'<IP_VM1>';
+GRANT SELECT (department_id, department_name)
+  ON hr_db.departments TO 'db_reader'@'<IP_VM1>';
+FLUSH PRIVILEGES;
+SHOW GRANTS FOR 'db_reader'@'<IP_VM1>';

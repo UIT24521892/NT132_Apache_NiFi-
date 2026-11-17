@@ -1,10 +1,10 @@
 # Các điều kiện môi trường và thao tác cần phối hợp
 
-Cập nhật: 28/10/2026 (Asia/Ho_Chi_Minh).
+Cập nhật: 10/11/2026 (UTC+07:00).
 
 Tại thời điểm bắt đầu rà soát, dự án chỉ có kế hoạch, chưa có runtime được kiểm chứng, inventory SSH hoặc lần provision nào. Những mục dưới đây là **PENDING_ENVIRONMENT** hoặc **NOT_RUN**, chưa phải lỗi triển khai đã quan sát được. Chưa có căn cứ để báo lỗi sudo, hypervisor, firewall hay API.
 
-Claude Code có thể tự động cấu hình VM, Linux, firewall, NiFi và chứng chỉ khi có CLI/API, kết nối, quyền và công cụ phù hợp. Chỉ chuyển cho người dùng phần thực sự cần thao tác thủ công sau khi kiểm tra năng lực môi trường. Không chạy lệnh Ubuntu/systemd trên máy macOS hiện tại để thay cho việc kiểm tra VM đích.
+Claude Code có thể tự động cấu hình VM, Linux, firewall, NiFi và chứng chỉ khi có CLI/API, kết nối, quyền và công cụ phù hợp. Chỉ chuyển cho người dùng phần thực sự cần thao tác thủ công sau khi kiểm tra năng lực môi trường. Không chạy lệnh Ubuntu/systemd trực tiếp trên host Windows/macOS để thay cho việc kiểm tra VM đích.
 
 Apache NiFi là trung tâm đề tài: các điều kiện mạng, service, quyền và TLS dưới đây chỉ phục vụ cài đặt, kết nối và vận hành NiFi cùng ba nguồn JDBC/REST/FTP. Không mở rộng thành lab hardening hạ tầng, PKI doanh nghiệp hoặc hệ thống monitoring riêng. Dữ liệu nhân sự/chấm công chỉ là fixtures; ghép dữ liệu nâng cao không phải điều kiện để bắt đầu kiểm chứng ba flow Get/Transform.
 
@@ -16,7 +16,7 @@ Các artifact triển khai mang nhãn **PLANNED: chưa tạo hoặc chưa triể
 - **Đã biết (28/10/2026):** nhóm chọn 4 VM trên 3 máy vật lý (1 Mac + 2 Windows); 05/11/2026 chốt: Mac (Trường) chạy NiFi; WIN-A (Trung) chạy DB + API thành hai VM; WIN-B (Phước) chạy FTP. HOST-MAC: macOS 27.0.1, Apple M2 Pro arm64 10 nhân, RAM 32 GiB, disk trống ≈60 GiB, UTM 4.7.5 có `utmctl`, đang nối mạng qua Wi-Fi `en0`. Thiết kế và vị trí VM đề xuất: [DEPLOYMENT_ARCHITECTURE.md](DEPLOYMENT_ARCHITECTURE.md). Không tự coi số VM là yêu cầu đã được thầy chốt.
 - **Prerequisite:** cấu hình hai máy Windows (edition, CPU/kiến trúc, RAM, disk trống, virtualization trong firmware, hypervisor đã cài); điện thoại làm hotspot chung cho 3 máy (iPhone/Android, nhóm không có router riêng), subnet thật và kết quả thử client isolation; quyền tạo VM trên từng máy.
 - **Artifact:** đã có `docs/DEPLOYMENT_ARCHITECTURE.md` (thiết kế, còn placeholder). **PLANNED:** inventory mẫu, version manifest theo từng VM/kiến trúc, script provision và hướng dẫn tạo VM bridged cho UTM và hypervisor Windows.
-- **Thao tác người dùng tối thiểu:** Claude chỉ truy cập trực tiếp được HOST-MAC. Trên mỗi máy Windows, mở PowerShell thường (không cần admin), chạy các lệnh dưới và gửi kết quả (không chứa secret); nếu dòng `systeminfo` không ra gì do Windows tiếng Việt, gửi đoạn cuối của `systeminfo`. Chọn thiết bị mạng; tạo VM bằng GUI hypervisor nếu không có CLI/SSH để Claude làm thay.
+- **Thao tác người dùng tối thiểu:** Ghi chú HOST-MAC là bối cảnh cũ; phiên 07/11 đang làm việc trên Windows. Kiểm tra lại quyền/công cụ trước khi thao tác. Trên mỗi máy Windows, mở PowerShell thường (không cần admin), chạy các lệnh dưới và gửi kết quả (không chứa secret); nếu dòng `systeminfo` không ra gì do Windows tiếng Việt, gửi đoạn cuối của `systeminfo`. Chọn thiết bị mạng; tạo VM bằng GUI hypervisor nếu không có CLI/SSH để Claude làm thay.
 
   ```powershell
   Get-CimInstance Win32_OperatingSystem | Select-Object Caption, Version, OSArchitecture
@@ -95,3 +95,61 @@ Evidence: thời điểm, môi trường và log/ảnh đã che secrets; ghi ch�
 ```
 
 Không yêu cầu người dùng làm thủ công một việc chỉ vì chưa kiểm tra công cụ/quyền hiện có. Không tuyên bố đã triển khai, PASS hoặc hoàn thành phục hồi khi mới viết cấu hình/runbook. Sau khi người dùng bổ sung điều kiện hoặc hoàn tất bước thủ công, Claude phải chạy lại kiểm chứng thích hợp trước khi cập nhật kết quả.
+
+## Bàn giao DB/API — 07/11/2026
+
+- **Task/gate/test:** kiểm chứng nguồn VM2/VM4 và PG-JDBC/PG-REST; G1/G2/G3, TC-03..TC-13, TC-27.
+- **Observed cause:** hai endpoint SSH lịch sử 127.0.0.1:2222/2223 không kết nối được khi kiểm tra TCP;
+  chưa có endpoint NiFi và inventory mạng lab. Không kết luận lỗi sudo/firewall.
+- **Prerequisite:** VM2/VM4 đang chạy, endpoint/user/host key được xác minh; SSH và quyền đúng VM;
+  key/mật khẩu nạp cục bộ, IP lab VM1/VM2/VM4 thật.
+- **Artifact đã chuẩn bị:** api/deploy/install.sh, smoke_test.sh + smoke_test.py,
+  sql/99_verify.sql, verify_source.sh, verify_reader.sh; tests và docs/DB_API_RUNBOOK.md.
+  Áp dụng bản sửa lên VM và kiểm thử MySQL/systemd vẫn NOT_RUN.
+- **Manual steps tối thiểu:** bật đúng VM2/VM4 hoặc xác nhận endpoint mới trên HOST-WIN-A;
+  xác minh SSH/host key và cấp quyền/secret cục bộ. Không gửi private key/password vào chat.
+  Khi có kết nối, agent tiếp tục tự triển khai/verify bằng artifact đã chuẩn bị.
+- **Verify:** theo DB_API_RUNBOOK.md; verify_source 10/0 (11/0 khi chủ động replay seed),
+  verify_reader 5/0; API smoke lab bật 14/0, lab tắt 10/0. Sau đó chạy TC trong NiFi và reboot VM;
+  lưu log/ảnh có timestamp, exit code, không chứa secret.
+- **Effect/status:** PENDING_ENVIRONMENT cho triển khai VM/NiFi; artifact/test cục bộ tiếp tục độc lập.
+- **Evidence:** chưa có evidence VM/NiFi cho bản sửa; test cục bộ có 33 pytest passed và evidence tại evidence/local-db-api-2026-11-07.md. Kết quả này không đóng các TC tích hợp.
+
+## Cấp public key SSH cho VM2/VM4 — 07/11/2026
+
+- **Task/gate/test:** truy cập VM2/VM4 để triển khai, G1/G2; TC-01/03/05/10..13/27 còn chờ.
+- **Observed cause:** TCP 2222/2223 đã mở; user trung; SSH dùng host key cục bộ tin cậy
+  nhưng exit 255 Permission denied (publickey,password). Windows không có key/agent để xác thực.
+- **Prerequisite:** người dùng nhập mật khẩu Ubuntu một lần tại SSH trong PowerShell của mình,
+  hoặc cấp public key qua console; không gửi password/private key vào chat.
+- **Artifact:** khóa nt132_lab_ed25519 ngoài repo trong .ssh của ADMIN; scripts/authorize_lab_ssh.ps1
+  chỉ gửi file .pub lên authorized_keys của trung, giữ key cũ và không thêm trùng.
+- **Manual step:** từ root repo trên Windows chạy
+  powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\authorize_lab_ssh.ps1,
+  nhập mật khẩu trung cho từng cổng 2222/2223 tại prompt, rồi báo đã xong.
+- **Verify:** agent SSH BatchMode với khóa lab, kiểm tra hostname, id, sudo -n true.
+  Nếu sudo cần mật khẩu tương tác, chỉ bàn giao bước sudo cụ thể sau khi xác minh quyền.
+- **Effect/status:** PENDING_ENVIRONMENT cho xác thực; bản sửa chưa áp dụng lên VM,
+  33 test cục bộ vẫn là evidence riêng, không đổi TC thành PASS.
+
+## Sudo triển khai DB/API — 10/11/2026
+
+- **Task/gate/test:** cập nhật nguồn API VM4, kiểm tra baseline/TLS MySQL VM2; G2.
+- **Observed cause:** SSH bằng khóa lab đã thành công vào `db`/`api` qua
+  `127.0.0.1:2222/2223`, user `trung`; `sudo -n true` cả hai trả `sudo: a password is required`.
+  Điều kiện cấp public key 07/11 đã giải quyết, không cần chạy lại authorize script.
+- **Prerequisite:** người dùng nhập mật khẩu sudo Ubuntu trực tiếp tại terminal SSH cục bộ.
+  Không gửi mật khẩu/private key/API key vào chat hoặc đưa vào file evidence.
+- **Artifact:** `scripts/verify_lab_vms.ps1` chạy đúng hai script được copy vào thư mục
+  `/home/trung/nt132-verify-<run-id>`; `.tools/vm-current-run.json` giữ đường dẫn run hiện tại ngoài Git.
+  Script DB mặc định chỉ đọc, in 10 baseline checks, tổng 50/45/5, 5 phòng ban, timezone và `have_ssl`.
+  Script API backup source/unit, giữ nguyên env/key/bind, chạy installer rồi smoke test.
+- **Manual step:** sau khi agent chuẩn bị run, chạy
+  `powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\verify_lab_vms.ps1`
+  từ root repo (hoặc dùng terminal agent mở), nhập mật khẩu tại từng prompt sudo.
+- **Verify:** agent lấy `evidence/vm-db.log` và `vm-api.log` từ từng VM;
+  mong đợi DB 10/0, 50/45/5, 5 phòng ban, timezone `+00:00`, TLS `YES`,
+  API env unchanged, service active/enabled và smoke 14/0 khi lab bật, `RUN_EXIT=0`.
+  Nếu TLS `DISABLED`, ghi rõ để Trường chốt tham số NiFi; không tự đổi TLS.
+- **Effect/status:** PENDING_ENVIRONMENT cho sudo; commit/push và test cục bộ tiếp tục được.
+  Chưa có kết quả DB/API runtime cho bản sửa; TC NiFi vẫn NOT_RUN.
