@@ -1,97 +1,112 @@
-# Các điều kiện môi trường và thao tác cần phối hợp
+# Việc còn thiếu để nối và vận hành các VM
 
-Cập nhật: 28/10/2026 (Asia/Ho_Chi_Minh).
+Cập nhật: 17/11/2026 (Asia/Ho_Chi_Minh).
 
-Tại thời điểm bắt đầu rà soát, dự án chỉ có kế hoạch, chưa có runtime được kiểm chứng, inventory SSH hoặc lần provision nào. Những mục dưới đây là **PENDING_ENVIRONMENT** hoặc **NOT_RUN**, chưa phải lỗi triển khai đã quan sát được. Chưa có căn cứ để báo lỗi sudo, hypervisor, firewall hay API.
+Cấu hình đã dùng lưu tại [DEPLOYMENT_ARCHITECTURE.md](DEPLOYMENT_ARCHITECTURE.md).
+NiFi đã chạy trên VM1; không cần cài lại JDK/NiFi hoặc chạy lại preflight cũ.
 
-Claude Code có thể tự động cấu hình VM, Linux, firewall, NiFi và chứng chỉ khi có CLI/API, kết nối, quyền và công cụ phù hợp. Chỉ chuyển cho người dùng phần thực sự cần thao tác thủ công sau khi kiểm tra năng lực môi trường. Không chạy lệnh Ubuntu/systemd trên máy macOS hiện tại để thay cho việc kiểm tra VM đích.
-
-Apache NiFi là trung tâm đề tài: các điều kiện mạng, service, quyền và TLS dưới đây chỉ phục vụ cài đặt, kết nối và vận hành NiFi cùng ba nguồn JDBC/REST/FTP. Không mở rộng thành lab hardening hạ tầng, PKI doanh nghiệp hoặc hệ thống monitoring riêng. Dữ liệu nhân sự/chấm công chỉ là fixtures; ghép dữ liệu nâng cao không phải điều kiện để bắt đầu kiểm chứng ba flow Get/Transform.
-
-Các artifact triển khai mang nhãn **PLANNED: chưa tạo hoặc chưa triển khai được xác minh** là yêu cầu Claude chuẩn bị trong các bước tiếp theo. Tài liệu đã có được ghi riêng ở MA-05; không dùng sự tồn tại của tài liệu để chứng minh cấu hình đã chạy. Sau khi tạo artifact, cập nhật đường dẫn thực tế và trạng thái.
+Ưu tiên trên VM1: xem cảnh báo PutFile, sửa `PD-JDBC` → `PG-JDBC`, export flow vào `nifi/`,
+tạo Controller Services (`JsonTreeReader`, `JsonRecordSetWriter`, `CSVReader`) và chuẩn bị
+MySQL Connector/J có version/checksum trong `/opt/nifi/drivers`.
+Đây là việc tiếp theo, chưa được ghi nhận hoàn thành.
 
 ## MA-01 — Máy ảo và card mạng
 
-- **Trạng thái:** PENDING_ENVIRONMENT; liên quan G1–G2. HOST-MAC đã đo; hai máy Windows và thiết bị mạng chưa có thông tin.
-- **Đã biết (28/10/2026):** nhóm chọn 4 VM trên 3 máy vật lý (1 Mac + 2 Windows); 05/11/2026 chốt: Mac (Trường) chạy NiFi; WIN-A (Trung) chạy DB + API thành hai VM; WIN-B (Phước) chạy FTP. HOST-MAC: macOS 27.0.1, Apple M2 Pro arm64 10 nhân, RAM 32 GiB, disk trống ≈60 GiB, UTM 4.7.5 có `utmctl`, đang nối mạng qua Wi-Fi `en0`. Thiết kế và vị trí VM đề xuất: [DEPLOYMENT_ARCHITECTURE.md](DEPLOYMENT_ARCHITECTURE.md). Không tự coi số VM là yêu cầu đã được thầy chốt.
-- **Prerequisite:** cấu hình hai máy Windows (edition, CPU/kiến trúc, RAM, disk trống, virtualization trong firmware, hypervisor đã cài); điện thoại làm hotspot chung cho 3 máy (iPhone/Android, nhóm không có router riêng), subnet thật và kết quả thử client isolation; quyền tạo VM trên từng máy.
-- **Artifact:** đã có `docs/DEPLOYMENT_ARCHITECTURE.md` (thiết kế, còn placeholder). **PLANNED:** inventory mẫu, version manifest theo từng VM/kiến trúc, script provision và hướng dẫn tạo VM bridged cho UTM và hypervisor Windows.
-- **Thao tác người dùng tối thiểu:** Claude chỉ truy cập trực tiếp được HOST-MAC. Trên mỗi máy Windows, mở PowerShell thường (không cần admin), chạy các lệnh dưới và gửi kết quả (không chứa secret); nếu dòng `systeminfo` không ra gì do Windows tiếng Việt, gửi đoạn cuối của `systeminfo`. Chọn thiết bị mạng; tạo VM bằng GUI hypervisor nếu không có CLI/SSH để Claude làm thay.
+**Cập nhật 17/11/2026 — cả 4 VM trên UTM Shared Network của Mac** (nội dung hotspot bên dưới
+là lịch sử). Đã xong: IP tĩnh nifi `.101`, db `.102`, ftp `.103`, api `.104`; cài và kiểm tra ba nguồn;
+Kali truy cập được cả ba; ufw allow/deny đã thử
+([evidence](../evidence/G2/2026-11-17_utm_source-vms.md)). Còn lại:
 
-  ```powershell
-  Get-CimInstance Win32_OperatingSystem | Select-Object Caption, Version, OSArchitecture
-  Get-CimInstance Win32_Processor | Select-Object Name, NumberOfLogicalProcessors
-  Get-CimInstance Win32_ComputerSystem | Select-Object @{n='RAM_GiB';e={[math]::Round($_.TotalPhysicalMemory/1GB,1)}}
-  Get-PSDrive -PSProvider FileSystem | Select-Object Name, @{n='Free_GiB';e={[math]::Round($_.Free/1GB,1)}}
-  systeminfo | Select-String 'Hyper-V|Virtualization|hypervisor'
-  Get-ItemProperty 'HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*' -ErrorAction SilentlyContinue | Where-Object DisplayName -match 'VirtualBox|VMware' | Select-Object DisplayName, DisplayVersion
-  Get-NetAdapter | Where-Object Status -eq 'Up' | Select-Object Name, InterfaceDescription, LinkSpeed
-  ```
+1. ~~Reboot thử 4 VM~~ — đạt 17/11 (E-UTM-07).
+2. Gỡ `/etc/sudoers.d/90-nt132-setup` trên cả 4 VM khi xong giai đoạn cấu hình, trước nghiệm thu.
 
-- **Kiểm chứng:** inventory của hypervisor xác nhận VM/NIC bridged; trên VM chạy `cat /etc/os-release`, `uname -m`, `ip -br address`, `ip route`, `free -h`, `df -h`. So sánh địa chỉ/interface/route với sơ đồ và kiểm tra TCP giữa đúng các VM trên các host khác nhau, kể cả HOST-MAC ↔ VM1 bridged trên chính nó. Ping đơn lẻ không đủ để kết luận đạt.
-- **Tác động:** chưa có VM/mạng phù hợp thì chưa thể xác minh provisioning và dịch vụ Linux; vẫn làm được code, cấu hình mẫu, fixtures và runbook.
+**IN_PROGRESS — G1–G2.** Hotspot đã có Mac `172.20.10.9/28`, Kali `172.20.10.10/28`,
+FTP `172.20.10.13/28`; gateway Kali `172.20.10.1`. Kali → FTP TCP/list/download qua curl
+thành công; xem [evidence 11/11](../evidence/G2/2026-11-11_hotspot_ftp-connectivity.md).
+VM DB Trung vẫn NAT `10.0.3.15/24`, enp0s3 DOWN; VM API chưa có IP lab.
+Trung cần giữ NAT quản trị, cấu hình card còn lại bridge Wi-Fi Windows và bật DHCP đúng card;
+gửi output IP/route cho cả DB và API trước khi đổi bind/firewall. Các IP hotspot chưa cố định.
+
+Trên từng VM, ghi `ip -br address`, `ip route`; thử TCP giữa các host/VM theo
+[ma trận kết nối](DEPLOYMENT_ARCHITECTURE.md#4-kết-nối-cần-hoàn-tất), gồm cả ca bị chặn.
+JDBC/REST còn chờ mạng nguồn. FTP đã đủ kết nối CLI để bắt đầu dựng flow trong NiFi;
+cả ba flow NiFi vẫn NOT_RUN cho tới khi có kết quả processor thật.
 
 ## MA-02 — IP, SSH và quyền quản trị Linux
 
-- **Trạng thái:** PENDING_ENVIRONMENT; liên quan G1–G2.
-- **Prerequisite:** IP/hostname từng VM, cổng SSH, username và SSH public key riêng của từng thành viên (người phụ trách có sudo trên VM mình, người khác chỉ xem — [DEPLOYMENT_ARCHITECTURE 7.1](DEPLOYMENT_ARCHITECTURE.md#71-thành-viên-kiểm-tra-server-của-nhau)), phương thức xác thực, host key fingerprint tin cậy, phạm vi sudo và đường console khôi phục khi thay đổi mạng.
-- **Artifact Claude cần chuẩn bị — PLANNED:** inventory không chứa secrets, script preflight SSH/sudo, cấu hình mạng/firewall theo nguồn–đích, script provision/verify có thể chạy lại và phương án rollback.
-- **Thao tác người dùng tối thiểu:** cung cấp endpoint và tài khoản quản trị qua cơ chế an toàn; cài SSH hoặc thêm public key bằng console khi SSH chưa có. Chỉ cấp những quyền thực sự cần; không gửi private key vào chat hoặc commit vào Git. Nếu sudo cần nhập mật khẩu tương tác mà công cụ không hỗ trợ, người dùng chạy chính xác bước đã chuẩn bị trong VM.
-- **Kiểm chứng:** từ host quản trị chạy `ssh -o BatchMode=yes <user>@<vm> 'id; hostname'` khi dùng khóa đã thiết lập. Trên VM kiểm tra `sudo -l`; `sudo -n true` chỉ kiểm tra quyền sudo không tương tác, thất bại không tự chứng minh tài khoản không có sudo. Trước khi bật firewall phải có rule SSH đúng nguồn và console/rollback; sau đó mở phiên SSH thứ hai để kiểm tra.
-- **Tác động:** thiếu endpoint/quyền thì chưa thể provision hoặc kiểm chứng runtime từ xa. Một lệnh thực sự bị từ chối phải được ghi lại với exit code và log đã che secrets; không suy đoán từ việc chưa được cấp inventory.
+**IN_PROGRESS — G1–G2.** SSH VM1 active/enabled, user `anhtruong` có sudo trong guest.
+Phiên công cụ bị từ chối mở TCP ngày 05/11 và 11/11; SSH tới hai IP cũ VM1 timeout ngày 09/11.
+Ngày 11/11 người dùng xác nhận Mac SSH vào Kali `172.20.10.10` được (USER_CONFIRMED).
+Còn thiếu evidence đối chiếu host key và log đăng nhập; giới hạn công cụ không chứng minh guest/firewall lỗi.
+
+Đối chiếu host key từ console Kali:
+
+```sh
+sudo ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub
+```
+
+Sau khi đối chiếu, kiểm tra trong Terminal Mac với IP đã ghi nhận:
+
+```sh
+ssh anhtruong@172.20.10.10 'id; hostname'
+```
+
+Trung/Phước bổ sung IP lab, user/host key và cách SSH vào VM nguồn. Mỗi thành viên dùng key
+riêng; chỉ có sudo trên VM phụ trách. Không gửi private key/mật khẩu vào chat/Git.
+Trước khi đổi firewall cần giữ console và kiểm tra một phiên SSH mới.
 
 ## MA-03 — Credentials và danh tính nội bộ
 
-- **Trạng thái:** PENDING_ENVIRONMENT; liên quan G2–G5.
-- **Prerequisite:** cơ chế lưu/truyền secrets được chấp nhận, người sở hữu tài khoản; baseline NiFi X.509 cho ba identity + managed authorizer; phạm vi tài khoản DB nguồn, FTP, API và quyền ghi thư mục PutFile. DB đích chỉ cần nếu làm mở rộng `report_db`.
-- **Artifact Claude cần chuẩn bị — PLANNED:** mẫu cấu hình chỉ có placeholder, script sinh/nạp secrets cục bộ, cấu hình quyền file, SQL grants tối thiểu, cấu hình identity/policy NiFi và runbook cấp/đổi/thu hồi credentials.
-- **Thao tác người dùng tối thiểu:** chọn hoặc cung cấp nơi nạp secrets; cung cấp tài khoản có sẵn nếu phải tích hợp hệ thống ngoài lab. Với tài khoản lab mới và quyền đã cấp, Claude có thể tự sinh credentials mạnh và cấu hình; người dùng không cần nhập thủ công từng tài khoản.
-- **Kiểm chứng:** NiFi kết nối được bằng tài khoản được cấp; DB nguồn đọc được và bị từ chối ghi; service user ghi đúng thư mục PutFile; API key đúng được chấp nhận/key sai bị từ chối; FTP đúng phạm vi thư mục; role NiFi bị từ chối đúng thao tác ngoài quyền. Chỉ kiểm tra account DB sink nếu thực hiện mở rộng. Các lệnh/ảnh/log kiểm chứng phải che token, mật khẩu và private key.
-- **Tác động:** thiếu secret của hệ thống có sẵn làm các integration tương ứng chưa chạy được; vẫn chuẩn bị được phần mềm, cấu hình placeholder và test. Không dùng single-user mặc định rồi tuyên bố đã đạt RBAC ba người dùng.
+**IN_PROGRESS — G2–G5.** Đã kiểm tra reader FTP `nifi_fetch` đăng nhập/list/download bằng curl;
+uploader có tên `clock_uploader`. Chưa nhận bằng chứng credentials mới được nạp vào NiFi.
+Nạp DB/FTP password và API key vào sensitive parameters của `nt132-params` tại VM1;
+không lưu giá trị thật trong repo. Thông số hiện có tại [nifi/README.md](../nifi/README.md).
+
+Khi nối nguồn: kiểm tra DB chỉ SELECT, API key đúng/sai và FTP reader chỉ list/download.
+Single-user hiện tại chỉ phục vụ bootstrap; ba identity/policies còn chưa cấu hình.
 
 ## MA-04 — Trust CA và chứng chỉ client trên trình duyệt
 
-- **Trạng thái:** NOT_RUN; liên quan G5, phụ thuộc endpoint TLS và identities thực tế.
-- **Prerequisite:** CA của lab, certificate có SAN khớp hostname/IP thực tế, thời hạn hợp lệ; X.509 client identity/certificate riêng cho từng role và kênh bàn giao khóa an toàn theo baseline SPECS.
-- **Artifact Claude cần chuẩn bị — PLANNED:** script tạo/kiểm chứng TLS theo phiên bản cho NiFi, bundle CA công khai của lab, gói client certificate ba role, bảng ánh xạ identity–policy NiFi và hướng dẫn import theo OS/browser. Chỉ cần phương án tin cậy tối thiểu của lab, không tự dựng PKI doanh nghiệp. Private key phải có quyền file hạn chế và không được lưu trong Git.
-- **Thao tác người dùng tối thiểu:** import CA và client certificate vào đúng profile khi browser/OS yêu cầu UI hoặc xác nhận cục bộ mà công cụ không thao tác được. Nếu công cụ quản trị certificate được cấp quyền và hỗ trợ đầy đủ, Claude có thể tự làm. Không thêm LDAP/OIDC ngoài baseline khi chưa có yêu cầu thay đổi.
-- **Kiểm chứng:** `openssl s_client -connect <host>:8443 -servername <hostname> -CAfile <ca.pem> -verify_return_error -verify_hostname <hostname>` cho certificate dùng DNS; nếu endpoint dùng IP thì kiểm tra SAN IP và dùng `-verify_ip <ip>` khi công cụ hỗ trợ. Bổ sung client certificate/key theo runbook mTLS. Trình duyệt không có cảnh báo TLS; từng identity đăng nhập và kiểm tra quyền thành công. Không dùng bỏ kiểm tra certificate để kết luận đạt.
-- **Tác động:** thiếu trust/import ở browser có thể chỉ chặn demo browser; kiểm thử TLS/API bằng trust store riêng vẫn tiếp tục nếu công cụ hỗ trợ. Thiếu authentication backend chặn kiểm thử identities tương ứng.
+**NOT_RUN — G2/G5.** Khi có endpoint lab, cấu hình CA/SAN phù hợp và client certificate riêng
+cho admin/operator/manager theo SPECS mục 7. Lưu khóa riêng ngoài Git,
+import CA/client cert vào browser dùng demo.
+
+Kiểm tra TLS bằng CA tin cậy, browser không cảnh báo và quyền cho phép/bị từ chối của từng role.
+HTTPS tự sinh ở localhost hiện tại chưa đáp ứng phần nghiệm thu này.
 
 ## MA-05 — Rubric, phạm vi và yêu cầu nộp của giảng viên
 
-- **Trạng thái:** PENDING_ENVIRONMENT theo nghĩa đang chờ thông tin đầu vào; liên quan quyết định phạm vi G0–G6, không phải lỗi runtime.
-- **Prerequisite:** rubric/đề bài gốc hoặc phản hồi của giảng viên về số server, giao thức, đầu ra, tự dựng API, bảo mật FTP, cluster, hình thức nộp và deadline.
-- **Artifact đã có:** giả định/baseline trong SPECS mục 1–2 và câu hỏi cho thầy ở plan Phần J. **PLANNED:** ghi nhận câu trả lời thật, mapping rubric chính thức với thiết kế/test/evidence sau khi được cung cấp; chưa có xác nhận của thầy.
-- **Thao tác người dùng tối thiểu:** cung cấp đề bài/rubric hoặc phản hồi đã nhận. Claude không tự liên hệ giảng viên hay gửi tin nhắn nếu chưa được chỉ thị rõ.
-- **Kiểm chứng:** mỗi quyết định ghi nguồn xác nhận, ngày, nội dung và tác động tới plan/specs; yêu cầu chưa xác nhận được gắn nhãn giả định/baseline đề xuất, không biến thành lời thầy.
-- **Tác động:** tiếp tục baseline khả thi đã ghi giả định; không tự thêm cluster, LDAP hoặc dịch vụ ngoài phạm vi chỉ vì chưa có phản hồi. Chưa thể tuyên bố đáp ứng đầy đủ rubric chính thức.
+**PENDING_ENVIRONMENT.** Ngày 11/11 người dùng báo giảng viên yêu cầu dashboard.
+Chưa chốt dùng giám sát sẵn có của NiFi hay phải làm web riêng, chỉ tiêu hiển thị và tiêu chí nghiệm thu.
+Cần làm rõ phần này để cập nhật phạm vi đang ghi trong SPECS; chưa có rubric/format/deadline đầy đủ.
+Tiếp tục tích hợp nguồn và chuẩn bị flow trong lúc chờ.
 
 ## MA-06 — Evidence GUI và demo trực tiếp
 
-- **Trạng thái:** NOT_RUN; liên quan G3–G6.
-- **Prerequisite:** các dịch vụ/flow cần chứng minh đã chạy; có browser/session phù hợp hoặc công cụ browser được cấp quyền và dữ liệu giả để demo.
-- **Artifact Claude cần chuẩn bị — PLANNED:** kịch bản demo ba flow NiFi và controller services, provenance của một FlowFile, queue/back pressure, retry và đầu ra; danh sách ảnh theo test, hướng dẫn thao tác cho ba role, mẫu evidence manifest, lệnh thu log/metrics và bước che secrets trước khi chia sẻ.
-- **Thao tác người dùng tối thiểu:** chỉ chụp/quay/thao tác GUI những bước Claude không truy cập được bằng công cụ hiện có; không phải tự làm lại phần đã chứng minh được qua CLI/API. Đăng nhập hoặc chọn chứng chỉ bằng UI nếu session cần người dùng thao tác.
-- **Kiểm chứng:** evidence có test ID, thời điểm, môi trường, expected/actual và đối chiếu log/API khi có; ảnh flow phải cho thấy trạng thái thực tế phù hợp kịch bản. Ảnh cấu hình không chứng minh rằng test đã chạy; không dùng ảnh minh họa hoặc dữ liệu giả lập kết quả làm evidence runtime.
-- **Tác động:** nếu chỉ thiếu GUI thì giữ riêng phần GUI/demo là NOT_RUN, đồng thời báo các kiểm thử CLI/API đã thực sự thực hiện. Không đánh dấu toàn bộ gate hoàn tất khi evidence bắt buộc còn thiếu.
+**IN_PROGRESS — G3–G6.** Đã tổng hợp [báo cáo tiến độ 11/11](BAO_CAO_TIEN_DO_2026-11-11.md)
+và bản chép evidence FTP từ ảnh chat. Còn lưu ảnh gốc, flow thật chạy với dữ liệu giả,
+flow export và log/ảnh theo TC-01..TC-30. Chưa có bằng chứng xem CSV trong queue NiFi;
+việc này cần chạy ListFTP/FetchFTP trước.
+Thu evidence có thời điểm, môi trường, expected/actual; che secrets.
+Chỉ bàn giao thao tác GUI khi công cụ không thực hiện được; không dùng ảnh cấu hình làm kết quả test.
+
+## MA-07 — Đưa artifact VM nguồn vào repo và hoàn tất kiểm tra cục bộ
+
+**IN_PROGRESS — G2–G3.** Theo báo cáo 09/11, bản sửa DB/API chưa push/áp dụng đầy đủ;
+FTP chưa có artifact trong repo.
+
+| Người / VM | Việc còn lại | Cách kiểm chứng |
+|---|---|---|
+| Trung / VM2, VM4 | Push bản sửa vào nhánh `trung/db-api`; áp dụng API bằng installer trong VM có sudo, chạy lại smoke test; bổ sung SQL verify | Trên nhánh nguồn: `sudo mysql < sql/99_verify.sql` cho 50/45/5, 5 phòng ban; `systemctl status nt132-api`, `curl -s http://127.0.0.1:5000/health` |
+| Phước / VM3 | Đã xác nhận account, `/checkin` và reader list/download từ Kali; còn đưa `vsftpd.conf`, script user/thư mục, simulator và fixture vào repo, xác nhận passive 40000–40010 | Kiểm tra reader ghi/rename/delete bị từ chối; upload `.tmp` → `.csv` từ Windows và chứng minh NiFi không lấy `.tmp`, lưu evidence đã che secrets |
+
+Các lệnh của nhánh DB/API cần checkout đúng nhánh trên VM; các file đó chưa có trong checkout
+hiện tại. Với DB/API chưa đổi bind/firewall trước khi có IP lab (MA-01).
+Với FTP đã có IP, đối chiếu cấu hình passive/firewall và hoàn thiện kiểm tra quyền reader.
 
 ## Quy tắc báo phần chưa thực hiện được
 
-Ngay khi phát hiện một tác vụ cần thiết không thực hiện được trong môi trường thực tế, Claude phải **báo rõ trong chat**, cập nhật tài liệu trạng thái và tiếp tục các việc độc lập. Nếu mới thiếu thông tin/môi trường chưa thử chạy, dùng PENDING_ENVIRONMENT/NOT_RUN. Chỉ dùng BLOCKED khi có rào cản thực tế đã quan sát và nêu được bằng chứng; không bịa lỗi sudo, VM, network hoặc API.
-
-Mỗi lần báo dùng đủ các trường sau:
-
-```text
-Task / gate / test ID:
-Observed cause: chưa thử vì thiếu ... HOẶC lệnh đã chạy + lỗi/exit code thực tế
-Prerequisite còn thiếu:
-Artifact: đường dẫn đã tạo, hoặc PLANNED — chưa tạo; nêu trạng thái đúng thực tế
-Manual steps tối thiểu: người dùng làm gì, ở host/VM/browser nào
-Verify: lệnh hoặc thao tác + kết quả mong đợi sau khi bổ sung prerequisite
-Effect: bước nào chưa chạy; việc độc lập nào vẫn tiếp tục
-Status: PENDING_ENVIRONMENT | NOT_RUN | BLOCKED | RESOLVED
-Evidence: thời điểm, môi trường và log/ảnh đã che secrets; ghi chưa có nếu chưa chạy
-```
-
-Không yêu cầu người dùng làm thủ công một việc chỉ vì chưa kiểm tra công cụ/quyền hiện có. Không tuyên bố đã triển khai, PASS hoặc hoàn thành phục hồi khi mới viết cấu hình/runbook. Sau khi người dùng bổ sung điều kiện hoặc hoàn tất bước thủ công, Claude phải chạy lại kiểm chứng thích hợp trước khi cập nhật kết quả.
+Nếu một bước cần thiết chưa thực hiện được, báo trong chat và cập nhật mục tương ứng:
+task/gate/test, nguyên nhân quan sát, prerequisite thiếu, artifact hiện có, thao tác tối thiểu
+trên đúng VM, cách verify, ảnh hưởng và evidence. Dùng PENDING_ENVIRONMENT/NOT_RUN khi chưa thử;
+chỉ dùng BLOCKED khi đã quan sát rào cản. Khi đủ điều kiện, kiểm chứng lại trước khi đóng mục.
